@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import HeroSection from '../components/HeroSection.vue'
+import QuickNavCard from '../components/QuickNavCard.vue'
 import StageCard from '../components/StageCard.vue'
 import FeatureCard from '../components/FeatureCard.vue'
 import ChannelCard from '../components/ChannelCard.vue'
@@ -36,6 +37,14 @@ const features = [
 
     <section class="section">
       <div class="container">
+        <h2>快速导航</h2>
+        <p class="section__lead">常用入口一步直达，方便快速查看官方渠道、法律依据与诉讼阶段。</p>
+        <QuickNavCard />
+      </div>
+    </section>
+
+    <section class="section section-alt">
+      <div class="container">
         <h2>按刑事诉讼阶段查看指引</h2>
         <p class="section__lead">
           以下阶段划分仅用于组织普法内容，不代表对具体案件程序状态作出判断。
@@ -46,7 +55,7 @@ const features = [
       </div>
     </section>
 
-    <section class="section section-alt">
+    <section class="section">
       <div class="container">
         <h2>核心功能</h2>
         <div class="grid grid-4">
@@ -61,7 +70,7 @@ const features = [
       </div>
     </section>
 
-    <section class="section">
+    <section class="section section-alt">
       <div class="container">
         <h2>官方救济渠道</h2>
         <p class="section__lead">
@@ -83,7 +92,7 @@ const features = [
       </div>
     </section>
 
-    <section class="section section-alt">
+    <section class="section">
       <div class="container">
         <h2>内容边界说明</h2>
         <LegalDisclaimer expanded />
