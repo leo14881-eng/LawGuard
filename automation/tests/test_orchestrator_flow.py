@@ -11,7 +11,7 @@ from unittest import mock
 
 from automation import orchestrator
 from automation.config import Config
-from automation.models import CommandResult, DevelopmentTask, ReviewResult
+from automation.models import CommandResult, DevelopmentTask, ReviewResult, TokenUsage
 
 
 def _fake_config(auto_commit: bool = True) -> Config:
@@ -40,6 +40,18 @@ def _fake_review(verdict: str = "PASS", safe_to_commit: bool = True) -> ReviewRe
         non_blocking_suggestions=[], evidence=[], safe_to_commit=safe_to_commit,
         commit_message="feat: 测试改动" if safe_to_commit else "",
     )
+
+
+def _fake_usage(call_label: str = "planner (第 1 次)") -> TokenUsage:
+    return TokenUsage(call_label=call_label, model="gpt-test", prompt_tokens=100, completion_tokens=20, total_tokens=120)
+
+
+def _fake_plan_result(risk_level: str = "LOW") -> tuple[DevelopmentTask, list[TokenUsage]]:
+    return _fake_task(risk_level=risk_level), [_fake_usage()]
+
+
+def _fake_review_result(verdict: str = "PASS", safe_to_commit: bool = True) -> tuple[ReviewResult, TokenUsage]:
+    return _fake_review(verdict=verdict, safe_to_commit=safe_to_commit), _fake_usage("reviewer")
 
 
 def _fake_claude_result(exit_code: int = 0, timed_out: bool = False) -> CommandResult:
@@ -86,7 +98,7 @@ class TestDryRunDoesNotCallClaude(_OrchestratorTestBase):
     def test_dry_run_skips_claude_and_commit(
         self, _ctx, _create_client, mock_plan, mock_run_claude
     ):
-        mock_plan.return_value = _fake_task(risk_level="LOW")
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
         exit_code = orchestrator.main(["--dry-run"])
         self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
         mock_run_claude.assert_not_called()
@@ -116,10 +128,10 @@ class TestAllowDirtyBlocksCommit(_OrchestratorTestBase):
         self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude
     ):
         self.mock_git.is_clean.return_value = False
-        mock_plan.return_value = _fake_task(risk_level="LOW")
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
         mock_run_claude.return_value = _fake_claude_result()
         mock_validate.return_value = ([], True)
-        mock_review.return_value = _fake_review(verdict="PASS", safe_to_commit=True)
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
 
         exit_code = orchestrator.main(["--allow-dirty"])
 
@@ -138,10 +150,10 @@ class TestReviewNotPassBlocksCommit(_OrchestratorTestBase):
     def test_fail_verdict_blocks_commit(
         self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude
     ):
-        mock_plan.return_value = _fake_task(risk_level="LOW")
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
         mock_run_claude.return_value = _fake_claude_result()
         mock_validate.return_value = ([], True)
-        mock_review.return_value = _fake_review(verdict="FAIL", safe_to_commit=False)
+        mock_review.return_value = _fake_review_result(verdict="FAIL", safe_to_commit=False)
 
         exit_code = orchestrator.main([])
 
@@ -158,10 +170,10 @@ class TestReviewNotPassBlocksCommit(_OrchestratorTestBase):
     def test_blocked_verdict_blocks_commit(
         self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude
     ):
-        mock_plan.return_value = _fake_task(risk_level="LOW")
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
         mock_run_claude.return_value = _fake_claude_result()
         mock_validate.return_value = ([], True)
-        mock_review.return_value = _fake_review(verdict="BLOCKED", safe_to_commit=False)
+        mock_review.return_value = _fake_review_result(verdict="BLOCKED", safe_to_commit=False)
 
         exit_code = orchestrator.main([])
 
@@ -180,14 +192,14 @@ class TestValidationFailureBlocksCommit(_OrchestratorTestBase):
     def test_validation_failure_blocks_commit(
         self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude
     ):
-        mock_plan.return_value = _fake_task(risk_level="LOW")
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
         mock_run_claude.return_value = _fake_claude_result()
         failed_result = CommandResult(
             command="npm run build", cwd="web", exit_code=1, stdout="", stderr="类型错误",
             duration_seconds=1.0, timed_out=False,
         )
         mock_validate.return_value = ([failed_result], False)
-        mock_review.return_value = _fake_review(verdict="PASS", safe_to_commit=True)
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
 
         exit_code = orchestrator.main([])
 
@@ -204,7 +216,7 @@ class TestClaudeFailureBlocksValidationAndCommit(_OrchestratorTestBase):
     def test_claude_failure_skips_validation_and_commit(
         self, _ctx, _create_client, mock_plan, mock_validate, mock_run_claude
     ):
-        mock_plan.return_value = _fake_task(risk_level="LOW")
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
         mock_run_claude.return_value = _fake_claude_result(exit_code=1)
 
         exit_code = orchestrator.main([])
@@ -220,7 +232,7 @@ class TestBlockedByPlannerSkipsClaude(_OrchestratorTestBase):
     @mock.patch("automation.openai_client.create_client")
     @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
     def test_blocked_task_skips_claude_and_commit(self, _ctx, _create_client, mock_plan, mock_run_claude):
-        mock_plan.return_value = _fake_task(risk_level="BLOCKED")
+        mock_plan.return_value = _fake_plan_result(risk_level="BLOCKED")
 
         exit_code = orchestrator.main([])
 

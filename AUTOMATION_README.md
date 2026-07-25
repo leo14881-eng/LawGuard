@@ -79,6 +79,62 @@ LAWGUARD_OPENAI_TIMEOUT_SECONDS=180（可选，默认 180）
   猜测的模型名。若填写的模型在你的账户下不可用，OpenAI 接口会返回错误，程序会如实报告
   并停止，**不会自动降级或切换到其他模型**。
 
+### 如何查看账户可用模型 / 配置 OPENAI_MODEL
+
+先在 `.env.local` 中配置好 `OPENAI_API_KEY`（`OPENAI_MODEL` 可以先不填），然后运行：
+
+```
+python automation/orchestrator.py --list-models
+```
+
+该命令只读查询当前 `OPENAI_API_KEY` 可访问的模型列表并打印出来，**不会做任何文本生成、
+不会调用 Claude Code、不会修改代码、不会提交**。展示的候选列表已过滤掉音频、实时语音、
+转录、Sora、Web 搜索专用、embedding、审核、语音合成、旧版 instruct、babbage/davinci
+等明显不适合"文本规划/评审"场景的模型，优先覆盖 `gpt-5.x`、`gpt-4.1`、`o1`、`o3`、`o4`
+系列；这只是启发式过滤，仅供参考。命令还会给出选型建议：
+
+- `gpt-5-nano`：推荐默认使用（成本最低，足够完成 Planner/Review 的 JSON 输出）；
+- `gpt-5.5`：高质量，建议仅在正式发布前的最终评审临时使用。
+
+> **重要提示**：Models API 仅表示当前 API Key 可以看到该模型，不保证该模型一定支持当前
+> 请求参数和 Responses API；最终以首次实际请求结果为准。
+
+从打印结果中选择一个你确认可用、且支持文本生成的模型名，写入 `.env.local` 的
+`OPENAI_MODEL=<模型名>`。
+
+如果你在未配置 `OPENAI_MODEL` 的情况下直接运行 `python automation/orchestrator.py`（或
+`--dry-run`），程序会自动尝试用你的 `OPENAI_API_KEY` 做同样的模型自检，把查询到的可用
+模型列表打印在错误信息里，方便你直接抄写；如果查询也失败（例如网络不可用、Key 无权限），
+则如实输出中文错误并安全退出。**无论哪种情况，程序都不会替你自动选择或静默切换模型**，
+你必须显式把最终选定的模型名写入 `OPENAI_MODEL` 或通过 `--model` 传入后才能继续运行。
+
+## 成本推荐
+
+本系统默认遵循 **Cost First（成本优先）**：在不降低任何安全 Gate 的前提下，把 OpenAI
+API 成本压缩到最低。
+
+推荐配置：
+
+- **开发阶段**：
+  ```
+  OPENAI_MODEL=gpt-5-nano
+  ```
+  原因：成本最低；足够完成 Planner 的 JSON 任务规划与 Reviewer 的基础评审；真正的编码
+  工作由本地 Claude Code 承担，不依赖 OpenAI 模型的代码生成能力；`npm run build`/测试等
+  Validator + 单元测试 + Review Gate 已经是主要的安全防线，不依赖更贵的模型来兜底。
+
+- **正式发布前**：可以临时切换到更高质量的模型完成最终评审：
+  ```
+  OPENAI_MODEL=gpt-5.5
+  ```
+  完成后可以再切回 `gpt-5-nano`。**切换必须由你自己显式修改 `.env.local` 或使用
+  `--model`，系统不会自动切换。**
+
+每次运行结束后，`automation/reports/<run_id>.md` 的"OpenAI Token 用量"一节会列出本次
+Planner/Reviewer 调用的 Prompt/Completion/Total Tokens（API 未返回时显示 `Unknown`，
+不做任何估算），Estimated Cost 固定显示 `Unknown`——项目内没有内置价格表（OpenAI 定价会
+变化，硬编码费率本身就是一种编造数据的风险），费用请你自行按 OpenAI 官方定价核算。
+
 ## 6. 首次安全测试
 
 在真正调用 OpenAI / Claude 之前，建议先运行单元测试确认安全边界生效：
@@ -159,8 +215,9 @@ python automation/orchestrator.py
 cd /d D:\SOFT\LawGuard
 python -m pip install -r requirements-automation.txt
 python -m unittest discover -s automation/tests -p "test_*.py"
+python automation\orchestrator.py --list-models
 python automation\orchestrator.py --dry-run
 python automation\orchestrator.py --no-commit
 python automation\orchestrator.py --no-commit --verbose
-python automation\orchestrator.py --model gpt-5.5 --dry-run
+python automation\orchestrator.py --model <你账户可用的模型名> --dry-run
 ```

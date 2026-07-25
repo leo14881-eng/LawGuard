@@ -24,6 +24,38 @@ _MAX_TREE_DEPTH = 6
 _MAX_FIELD_CHARS = 6000
 _MAX_TOTAL_CHARS = 20000
 
+# 规划器只需要"当前能做什么、还差什么"这类信息即可决策下一步开发任务；
+# P-1/P0/P1/P2 等最高治理原则已经在 planner_system.txt 中以编号方式引用，
+# 不需要在每次请求的上下文里重复发送整章原文，借此显著压缩 Token 消耗。
+_SOT_PLANNER_SECTION_KEYWORDS = (
+    "V1 功能范围", "V1 明确不做", "页面清单", "当前开发进度", "下一步计划",
+)
+_CLAUDE_MD_PLANNER_SECTION_KEYWORDS = (
+    "项目状态", "仓库结构", "常用命令", "架构说明",
+)
+
+
+def _extract_markdown_sections(text: str, keywords: tuple[str, ...]) -> str:
+    """从 Markdown 文本中只提取二级标题（"## "）包含给定关键词的章节。
+
+    用于把发送给 OpenAI 的上下文限制为规划所需的必要章节，而不是整份文档全文。
+    找不到任何匹配章节时返回空字符串，调用方应回退到全文（避免因关键词漂移而
+    丢失全部上下文）。
+    """
+    lines = text.splitlines()
+    sections: list[str] = []
+    current: list[str] | None = None
+    for line in lines:
+        if line.startswith("## "):
+            if current is not None:
+                sections.append("\n".join(current))
+            current = [line] if any(kw in line for kw in keywords) else None
+        elif current is not None:
+            current.append(line)
+    if current is not None:
+        sections.append("\n".join(current))
+    return "\n\n".join(sections)
+
 
 def _truncate(text: str, limit: int) -> str:
     if text is None:
@@ -89,18 +121,25 @@ def build_planner_context() -> str:
     root = cfg.PROJECT_ROOT
     git = GitService(root)
 
-    sot = _read_text(cfg.SOT_FILE)
-    claude_md = _read_text(cfg.CLAUDE_MD_FILE)
+    sot_full = _read_text(cfg.SOT_FILE)
+    sot_sections = _extract_markdown_sections(sot_full, _SOT_PLANNER_SECTION_KEYWORDS)
+    sot = sot_sections or sot_full  # 关键词未命中任何章节时回退全文，避免上下文丢失
+
+    claude_md_full = _read_text(cfg.CLAUDE_MD_FILE)
+    claude_md_sections = _extract_markdown_sections(claude_md_full, _CLAUDE_MD_PLANNER_SECTION_KEYWORDS)
+    claude_md = claude_md_sections or claude_md_full
+
     package_json = _read_text(cfg.WEB_DIR / "package.json", 2000)
     file_tree = build_file_tree(root)
     recent_log = git.get_recent_log(5)
     status = git.get_status_short()
 
     parts = [
-        "## LAWGUARD_SOT.md（项目唯一事实源）",
+        "## LAWGUARD_SOT.md 摘录（仅规划相关章节：功能范围/页面清单/开发进度/下一步计划；"
+        "P-1/P0/P1/P2 等治理原则已在系统提示中以编号引用，此处不重复全文）",
         sot,
         "",
-        "## CLAUDE.md（开发规则）",
+        "## CLAUDE.md 摘录（仅规划相关章节：项目状态/仓库结构/常用命令/架构说明）",
         claude_md,
         "",
         "## web/package.json",

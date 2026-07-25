@@ -136,7 +136,7 @@ function closeNav() {
   font-weight: 700;
 }
 
-@media (min-width: 800px) {
+@media (min-width: 960px) {
   .header__toggle {
     display: none;
   }

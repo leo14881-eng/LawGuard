@@ -1,5 +1,8 @@
-/* 法护 LawGuard 全局样式与设计变量 */
+/* 法护 LawGuard 全局样式与设计系统（Design Tokens）
+   —— 所有页面与组件必须复用本文件中的变量，禁止在各页面中各自定义颜色、圆角、
+   间距或阴影（见 LAWGUARD_SOT.md "P3：产品级界面原则"）。 */
 :root {
+  /* ===== 颜色体系 ===== */
   /* 主色：深蓝色系 */
   --color-primary: #14335c;
   --color-primary-dark: #0b2545;
@@ -10,24 +13,84 @@
   --color-surface-alt: #f6f8fb;
   --color-bg: #ffffff;
   --color-border: #d9e2ec;
+  --color-border-strong: #b9c7d6;
 
   /* 文字色 */
   --color-text: #1f2937;
   --color-text-muted: #5b6b7f;
   --color-text-inverse: #ffffff;
 
-  /* 状态提示色（克制、不刺眼） */
+  /* 状态提示色（克制、不刺眼）——用于边界说明、待复核等中性/需注意提示 */
   --color-notice-bg: #fef8ec;
   --color-notice-border: #f0d9a6;
   --color-notice-text: #6b4f11;
 
-  --radius: 10px;
-  --max-width: 1200px;
+  /* 语义状态色：success / warning / error / info / disabled
+     用于 StatusBadge、AppAlert（NoticeBanner）等组件的状态语义，
+     不得在各页面中另行定义同类颜色。 */
+  --color-success-bg: #eaf6ee;
+  --color-success-border: #b8dfc4;
+  --color-success-text: #1e6b3a;
 
+  --color-warning-bg: var(--color-notice-bg);
+  --color-warning-border: var(--color-notice-border);
+  --color-warning-text: var(--color-notice-text);
+
+  --color-error-bg: #fdecec;
+  --color-error-border: #f3b8b8;
+  --color-error-text: #9c2b2b;
+
+  --color-info-bg: var(--color-surface);
+  --color-info-border: var(--color-border);
+  --color-info-text: var(--color-primary-dark);
+
+  --color-disabled-bg: #eef1f4;
+  --color-disabled-border: #dbe1e8;
+  --color-disabled-text: #9aa5b1;
+
+  /* ===== 圆角与阴影 ===== */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 4px 14px rgba(20, 51, 92, 0.08);
+  --shadow-md: 0 8px 24px rgba(20, 51, 92, 0.12);
+
+  /* ===== 间距体系（8px 基准 spacing scale，禁止随意使用孤立数值） ===== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ===== 字体体系 ===== */
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Microsoft YaHei', system-ui, sans-serif;
 
+  --font-size-page-title: 32px;      /* 页面主标题（h1），桌面端见下方媒体查询放大 */
+  --font-size-section-title: 24px;   /* 区块标题（h2） */
+  --font-size-block-title: 18px;     /* 卡片/小节标题（h3） */
+  --font-size-body: 15px;            /* 正文 */
+  --font-size-caption: 14px;         /* 辅助说明文字 */
+  --font-size-label: 13px;           /* 标签、徽标 */
+  --font-size-metric: 20px;          /* 数据指标/强调数字 */
+
+  --max-width: 1200px;
+
+  /* ===== 响应式断点（文档化数值；@media 中直接书写，CSS 变量不能用于媒体查询） =====
+     手机：< 640px（默认，移动端优先）
+     平板：>= 640px
+     桌面：>= 960px
+     全站统一使用这两个断点，禁止页面各自定义其他断点数值。 */
+
   font-family: var(--font-sans);
+  font-size: var(--font-size-body);
   color: var(--color-text);
   background: var(--color-bg);
   line-height: 1.6;
@@ -65,23 +128,23 @@ h3 {
   color: var(--color-primary-dark);
   font-weight: 700;
   line-height: 1.3;
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
 }
 
 h1 {
-  font-size: 32px;
+  font-size: var(--font-size-page-title);
 }
 
 h2 {
-  font-size: 24px;
+  font-size: var(--font-size-section-title);
 }
 
 h3 {
-  font-size: 18px;
+  font-size: var(--font-size-block-title);
 }
 
 p {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
   color: var(--color-text);
 }
 
@@ -91,7 +154,7 @@ a {
 
 ul {
   margin: 0;
-  padding-left: 20px;
+  padding-left: var(--space-5);
 }
 
 /* 通用容器：移动端优先，桌面端最大宽度受控 */
@@ -99,32 +162,33 @@ ul {
   width: 100%;
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 var(--space-5);
   box-sizing: border-box;
 }
 
 .section {
-  padding: 40px 0;
+  padding: var(--space-10) 0;
 }
 
 .section-alt {
   background: var(--color-surface-alt);
 }
 
-/* 按钮 */
+/* 按钮：统一 default / hover / focus / disabled / loading 状态，
+   禁止页面各自定义按钮样式（见 P3.4）。 */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 12px 20px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
   border-radius: var(--radius);
-  font-size: 15px;
+  font-size: var(--font-size-body);
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
   border: 1.5px solid transparent;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
 }
 
 .btn-primary {
@@ -151,21 +215,45 @@ ul {
   outline-offset: 2px;
 }
 
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  background: var(--color-disabled-bg);
+  border-color: var(--color-disabled-border);
+  color: var(--color-disabled-text);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn--loading {
+  opacity: 0.75;
+  cursor: progress;
+}
+
 /* 卡片 */
 .card {
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: var(--space-5);
 }
 
-/* 状态徽标 */
+.card--interactive {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card--interactive:hover {
+  border-color: var(--color-primary-light);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 状态徽标：默认沿用中性 warning 语义（历史上用于"待复核"类提示），
+   具体状态语义请使用 StatusBadge 组件的 status 属性而非直接写颜色。 */
 .badge {
   display: inline-block;
-  font-size: 12px;
+  font-size: var(--font-size-label);
   font-weight: 600;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--color-notice-bg);
   color: var(--color-notice-text);
   border: 1px solid var(--color-notice-border);
@@ -176,7 +264,7 @@ ul {
 .grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 @media (min-width: 640px) {

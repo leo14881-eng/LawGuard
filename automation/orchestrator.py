@@ -2,7 +2,7 @@
 
 用法：
     python automation/orchestrator.py [--dry-run] [--no-commit] [--allow-dirty]
-                                       [--model MODEL] [--verbose]
+                                       [--model MODEL] [--verbose] [--list-models]
 
 V1 每次运行最多只完成一个任务，禁止无限循环，禁止自动连续开发多个任务。
 """
@@ -14,8 +14,26 @@ import secrets
 import sys
 from pathlib import Path
 
+if __package__ in (None, ""):
+    # 支持 `python automation/orchestrator.py` 直接运行：以脚本方式启动时，Python
+    # 只会把 automation/ 目录本身加入 sys.path，而不是项目根目录，导致下面的
+    # `from automation import ...` 找不到 automation 包。这里补上项目根目录，
+    # 使脚本无论以 `python automation/orchestrator.py` 还是
+    # `python -m automation.orchestrator` 启动都能正确导入。
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from automation import claude_runner, context_loader, openai_client, validator
-from automation.config import PROJECT_ROOT, REPORTS_DIR, RUNTIME_DIR, WEB_DIR, Config, ConfigError, load_config
+from automation.config import (
+    PROJECT_ROOT,
+    REPORTS_DIR,
+    RUNTIME_DIR,
+    WEB_DIR,
+    Config,
+    ConfigError,
+    ModelNotConfiguredError,
+    load_api_key_only,
+    load_config,
+)
 from automation.git_service import GitError, GitService
 from automation.models import ReviewResult, RunReport
 from automation.report_writer import (
@@ -63,6 +81,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="临时覆盖 OPENAI_MODEL 环境变量指定的模型。",
     )
     parser.add_argument(
+        "--list-models", action="store_true",
+        help="列出当前 OPENAI_API_KEY 可访问的模型后退出；不生成任务、不调用 Claude、不提交。",
+    )
+    parser.add_argument(
         "--verbose", action="store_true",
         help="输出更详细的日志（仍不会显示任何密钥）。",
     )
@@ -79,6 +101,51 @@ def _now_iso() -> str:
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
+def _print_model_options(model_ids: list[str], print_fn) -> None:
+    """将模型列表以中文提示打印出来（print_fn 可以是 print 或 logger.error 等）。"""
+    text_models = openai_client.filter_likely_text_models(model_ids)
+    print_fn(
+        f"当前 OPENAI_API_KEY 可访问的模型共 {len(model_ids)} 个，其中适合 Responses API "
+        "普通文本规划/评审场景的候选模型："
+    )
+    for model_id in text_models:
+        print_fn(f"  - {model_id}")
+    print_fn("")
+    print_fn("选型建议（仅供参考，不会自动选择，你仍需显式配置）：")
+    for model_id, note in openai_client.MODEL_RECOMMENDATION_NOTES:
+        print_fn(f"  - {model_id}：{note}")
+    print_fn("")
+    print_fn(f"提示：{openai_client.MODELS_API_DISCLAIMER}")
+    print_fn(
+        "请从上方列表中选择一个模型，在项目根目录 .env.local 中设置 "
+        "OPENAI_MODEL=<模型名>，或运行时加上 --model <模型名> 后重试。"
+    )
+
+
+def handle_list_models(args: argparse.Namespace) -> int:
+    """处理 --list-models：只读查询当前账户可访问的模型并打印，不做任何文本生成。"""
+    print("正在查询当前 OPENAI_API_KEY 可访问的模型列表（不会进行任何文本生成）...")
+    try:
+        api_key = load_api_key_only()
+    except ConfigError as exc:
+        print(f"配置错误：{exc}")
+        return EXIT_CONFIG_ERROR
+
+    try:
+        model_ids = openai_client.list_available_models(api_key)
+    except openai_client.ModelListError as exc:
+        print(f"获取模型列表失败：{exc}")
+        print("请检查网络连接与 OPENAI_API_KEY 权限后重试。")
+        return EXIT_GENERAL_FAILURE
+
+    if not model_ids:
+        print("未查询到任何可访问的模型，请确认该 API Key 拥有访问模型列表的权限。")
+        return EXIT_GENERAL_FAILURE
+
+    _print_model_options(model_ids, print)
+    return EXIT_SUCCESS
+
+
 def should_auto_commit(
     *, safe_to_commit: bool, auto_commit_enabled: bool, no_commit_flag: bool, allow_dirty_flag: bool
 ) -> bool:
@@ -91,6 +158,9 @@ def should_auto_commit(
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+
+    if args.list_models:
+        return handle_list_models(args)
 
     run_id = _generate_run_id()
     run_dir = RUNTIME_DIR / run_id
@@ -137,6 +207,22 @@ def main(argv: list[str] | None = None) -> int:
     # 第一步：加载配置
     try:
         config = load_config(model_override=args.model)
+    except ModelNotConfiguredError as exc:
+        # 未配置 OPENAI_MODEL：先尝试用已验证的 API Key 做模型自检，
+        # 帮助用户了解应该填写哪个模型；无论是否查询成功，都不会自动选择或
+        # 静默切换模型，最终仍然安全退出。
+        logger.error("配置错误：%s", exc)
+        logger.info("正在尝试查询你的 OpenAI 账户可访问的模型，用于提示配置（不会进行任何文本生成）...")
+        try:
+            model_ids = openai_client.list_available_models(exc.api_key)
+            if model_ids:
+                _print_model_options(model_ids, logger.error)
+            else:
+                logger.error("未查询到任何可访问的模型，请确认该 API Key 拥有访问模型列表的权限。")
+        except openai_client.ModelListError as list_exc:
+            logger.error("尝试查询可用模型列表也失败：%s", list_exc)
+            logger.error("请手动确认你的 OpenAI 账户可访问的模型名后，通过 OPENAI_MODEL 或 --model 配置。")
+        return finalize("CONFIG_ERROR", str(exc), EXIT_CONFIG_ERROR)
     except ConfigError as exc:
         logger.error("配置错误：%s", exc)
         return finalize("CONFIG_ERROR", str(exc), EXIT_CONFIG_ERROR)
@@ -171,13 +257,16 @@ def main(argv: list[str] | None = None) -> int:
     client = openai_client.create_client(config)
     logger.info("调用 OpenAI 规划下一项开发任务...")
     try:
-        task = openai_client.plan_next_task(client, config, project_context)
+        task, planner_usages = openai_client.plan_next_task(client, config, project_context)
     except openai_client.PlannerError as exc:
+        report.token_usages.extend(exc.usages)
         logger.error("规划任务失败：%s", exc)
         return finalize("PLANNER_FAILED", str(exc), EXIT_GENERAL_FAILURE)
     except Exception as exc:  # noqa: BLE001 - OpenAI SDK 可能抛出多种异常（鉴权、模型不可用等）
         logger.error("调用 OpenAI 规划器时发生错误：%s", exc)
         return finalize("PLANNER_FAILED", str(exc), EXIT_GENERAL_FAILURE)
+
+    report.token_usages.extend(planner_usages)
 
     report.task = task
     write_json_file(run_dir / "task.json", task.to_dict())
@@ -246,8 +335,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     review: ReviewResult | None = None
     try:
-        review = openai_client.review_change(client, config, review_context)
+        review, review_usage = openai_client.review_change(client, config, review_context)
+        report.token_usages.append(review_usage)
     except openai_client.ReviewerError as exc:
+        if exc.usage is not None:
+            report.token_usages.append(exc.usage)
         logger.error("评审器输出不合法：%s", exc)
     except Exception as exc:  # noqa: BLE001 - OpenAI SDK 可能抛出多种异常
         logger.error("调用 OpenAI 评审器时发生错误：%s", exc)

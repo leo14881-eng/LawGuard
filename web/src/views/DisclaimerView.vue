@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import NoticeBanner from '../components/NoticeBanner.vue'
+import PageHeader from '../components/PageHeader.vue'
+import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 </script>
 
 <template>
   <div class="container section">
-    <h1>使用边界说明</h1>
+    <PageHeader
+      title="使用边界说明"
+      description="本平台提供的是一般性、通俗化的普法信息，不构成针对任何具体案件的法律意见。"
+    />
 
-    <NoticeBanner tone="caution">
-      <p>本平台提供的是一般性、通俗化的普法信息，不构成针对任何具体案件的法律意见。</p>
-    </NoticeBanner>
+    <LegalDisclaimer expanded />
 
     <section class="section">
       <h2>本平台不做的事</h2>

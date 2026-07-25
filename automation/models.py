@@ -50,6 +50,24 @@ class CommandResult:
 
 
 @dataclass
+class TokenUsage:
+    """一次 OpenAI Responses API 调用的 Token 用量记录。
+
+    字段在 API 未返回对应用量信息时为 None（例如 SDK 版本差异、调用异常提前返回），
+    报告展示时一律显示"Unknown"，不进行任何估算或猜测。
+    """
+
+    call_label: str
+    model: str
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    total_tokens: int | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+@dataclass
 class ReviewResult:
     """OpenAI 评审器的评审结论。"""
 
@@ -79,6 +97,7 @@ class RunReport:
     git_commit: str | None
     final_status: str
     error_message: str | None
+    token_usages: list[TokenUsage] = dataclasses.field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -92,6 +111,7 @@ class RunReport:
             "git_commit": self.git_commit,
             "final_status": self.final_status,
             "error_message": self.error_message,
+            "token_usages": [u.to_dict() for u in self.token_usages],
         }
 
     def to_safe_json(self) -> str:

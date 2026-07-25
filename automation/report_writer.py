@@ -8,7 +8,7 @@ import json
 import logging
 from pathlib import Path
 
-from automation.models import CommandResult, ReviewResult, RunReport
+from automation.models import CommandResult, ReviewResult, RunReport, TokenUsage
 from automation.security import redact_secrets
 
 
@@ -66,6 +66,46 @@ def _format_command_results(results: list[CommandResult]) -> str:
             status = f"失败（退出码 {r.exit_code}）"
         lines.append(f"- `{r.command}`：{status}，耗时 {r.duration_seconds:.1f} 秒")
     return "\n".join(lines)
+
+
+def _format_token_usages(usages: list[TokenUsage]) -> str:
+    """生成 OpenAI Token 用量小节文本。API 未返回的字段一律显示 Unknown，不做任何估算。"""
+    if not usages:
+        return "（本次运行未发生 OpenAI 调用）"
+
+    def _fmt(value: int | None) -> str:
+        return str(value) if value is not None else "Unknown"
+
+    lines = []
+    total_prompt = 0
+    total_completion = 0
+    total_all = 0
+    has_unknown = False
+    for u in usages:
+        lines.append(
+            f"- 调用：{u.call_label}｜Model：{u.model}｜Prompt Tokens：{_fmt(u.prompt_tokens)}｜"
+            f"Completion Tokens：{_fmt(u.completion_tokens)}｜Total Tokens：{_fmt(u.total_tokens)}"
+        )
+        if u.prompt_tokens is None or u.completion_tokens is None or u.total_tokens is None:
+            has_unknown = True
+        else:
+            total_prompt += u.prompt_tokens
+            total_completion += u.completion_tokens
+            total_all += u.total_tokens
+
+    if has_unknown:
+        summary_line = "汇总：存在未知字段，暂不汇总合计（避免用部分数据拼出误导性总数）。"
+    else:
+        summary_line = (
+            f"汇总：Prompt Tokens {total_prompt}，Completion Tokens {total_completion}，"
+            f"Total Tokens {total_all}。"
+        )
+
+    # 不内置任何价格表：OpenAI 定价会变化，项目内没有可核验的最新价格来源，
+    # 强行估算金额属于编造数据，因此 Estimated Cost 固定显示 Unknown。
+    cost_line = "Estimated Cost：Unknown（未内置价格表，不做估算，请自行按 OpenAI 官方定价核算）。"
+
+    return "\n".join(lines) + "\n\n" + summary_line + "\n" + cost_line
 
 
 def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: list[str]) -> Path:
@@ -151,6 +191,9 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
 ## 13. 最终状态
 {report.final_status}
 {error_line}
+
+## 14. OpenAI Token 用量
+{_format_token_usages(report.token_usages)}
 """
     reports_dir.mkdir(parents=True, exist_ok=True)
     path = reports_dir / f"{report.run_id}.md"

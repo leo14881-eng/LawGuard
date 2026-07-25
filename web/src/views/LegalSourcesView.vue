@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import NoticeBanner from '../components/NoticeBanner.vue'
+import PageHeader from '../components/PageHeader.vue'
+import LegalDisclaimer from '../components/LegalDisclaimer.vue'
+import SourceCitationCard from '../components/SourceCitationCard.vue'
 </script>
 
 <template>
   <div class="container section">
-    <h1>法律来源与版本记录</h1>
+    <PageHeader
+      title="法律来源与版本记录"
+      description="本页面记录法护内容对应的法律依据来源、版本与核验状态，未完成核验的内容不会标注为已核验。"
+    />
 
-    <NoticeBanner tone="caution" title="内容状态说明">
-      <p>本平台内容对应的具体法律条文引用正在整理，需经可核验的正式公开文本来源确认并完成法律复核后发布，当前暂未收录具体条文。</p>
-    </NoticeBanner>
+    <LegalDisclaimer />
 
     <section class="section">
       <h2>内容依据原则</h2>
@@ -21,7 +24,24 @@ import NoticeBanner from '../components/NoticeBanner.vue'
 
     <section class="section">
       <h2>版本记录</h2>
-      <p>当前为 V1 初始版本，尚未收录正式法律条文引用。后续版本将在完成法律复核后逐步补充并记录更新时间。</p>
+      <p class="lead">
+        当前为 V1 初始版本，尚未收录具体法律条文引用。以下条目将在完成法律复核后逐步补充，
+        每条记录会展示官方来源、法律版本与最后核验日期。
+      </p>
+      <SourceCitationCard
+        source-name="V1 尚未收录具体法律条文引用"
+        status="pending"
+      >
+        后续版本将在确认可核验的官方来源并完成法律复核后，逐条补充为独立的来源记录卡片。
+      </SourceCitationCard>
     </section>
   </div>
 </template>
+
+<style scoped>
+.lead {
+  color: var(--color-text-muted);
+  max-width: 640px;
+  margin-bottom: var(--space-5);
+}
+</style>

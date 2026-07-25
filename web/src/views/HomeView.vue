@@ -3,7 +3,7 @@ import HeroSection from '../components/HeroSection.vue'
 import StageCard from '../components/StageCard.vue'
 import FeatureCard from '../components/FeatureCard.vue'
 import ChannelCard from '../components/ChannelCard.vue'
-import NoticeBanner from '../components/NoticeBanner.vue'
+import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import { stages } from '../data/stages'
 
 const features = [
@@ -86,12 +86,7 @@ const features = [
     <section class="section section-alt">
       <div class="container">
         <h2>内容边界说明</h2>
-        <NoticeBanner tone="caution">
-          <p>本平台不提供个案判断，不针对具体案件、具体机关或具体人员发表意见。</p>
-          <p>本平台不替代执业律师，不能替代专业法律服务。</p>
-          <p>本平台不收集任何案件材料，不提供上传、提交或在线咨询功能。</p>
-          <p>如遇紧急或重大事项，请及时联系执业律师或官方机构处理。</p>
-        </NoticeBanner>
+        <LegalDisclaimer expanded />
       </div>
     </section>
   </div>

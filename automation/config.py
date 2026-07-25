@@ -31,6 +31,19 @@ class ConfigError(Exception):
     """配置错误，程序应输出中文错误提示并安全退出。"""
 
 
+class ModelNotConfiguredError(ConfigError):
+    """OPENAI_MODEL 未配置的专用异常。
+
+    携带已通过校验的 api_key，供调用方（orchestrator）尝试调用 OpenAI Models API
+    做模型自检、向用户展示可选模型，而不必重新加载一遍配置。本异常本身不触发任何
+    模型选择或文本生成，只是把已验证的 api_key 传递给上层用于只读查询。
+    """
+
+    def __init__(self, message: str, api_key: str):
+        super().__init__(message)
+        self.api_key = api_key
+
+
 @dataclass
 class Config:
     """自动化系统运行配置。"""
@@ -58,28 +71,44 @@ def _parse_int(value: str | None, default: int) -> int:
         return default
 
 
-def load_config(model_override: str | None = None) -> Config:
-    """加载运行配置。
-
-    从项目根目录 .env.local 读取环境变量；OPENAI_API_KEY 缺失时抛出 ConfigError。
-    """
+def _load_env_file() -> None:
+    """加载项目根目录 .env.local（若存在），不覆盖已有的进程环境变量。"""
     if ENV_FILE.exists():
         load_dotenv(dotenv_path=ENV_FILE, override=False)
 
+
+def load_api_key_only() -> str:
+    """仅加载并校验 OPENAI_API_KEY，不要求 OPENAI_MODEL。
+
+    供 --list-models 等只需要调用 OpenAI 只读接口（不涉及选择具体文本生成模型）的
+    场景使用；OPENAI_API_KEY 缺失时抛出 ConfigError。
+    """
+    _load_env_file()
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise ConfigError(
             "未找到 OPENAI_API_KEY，请在项目根目录 .env.local 中配置该变量后重试。"
         )
+    return api_key
+
+
+def load_config(model_override: str | None = None) -> Config:
+    """加载运行配置。
+
+    OPENAI_API_KEY 缺失时抛出 ConfigError；OPENAI_MODEL 缺失时抛出
+    ModelNotConfiguredError（ConfigError 的子类，携带 api_key 供上层做模型自检）。
+    """
+    api_key = load_api_key_only()
 
     # 不提供任何内置默认模型：未经确认在当前 OpenAI 账户下可用的模型名不得
     # 作为静默兜底值，必须由用户通过 .env.local 或 --model 显式指定。
     model = (model_override or os.environ.get("OPENAI_MODEL", "")).strip()
     if not model:
-        raise ConfigError(
+        raise ModelNotConfiguredError(
             "未配置 OPENAI_MODEL，且未通过 --model 指定。为避免使用未经确认在你的 OpenAI 账户下"
             "可用的模型，程序不会使用任何内置默认模型。请在项目根目录 .env.local 中设置 "
-            "OPENAI_MODEL=<你的账户可访问的模型名>，或运行时加上 --model <模型名> 后重试。"
+            "OPENAI_MODEL=<你的账户可访问的模型名>，或运行时加上 --model <模型名> 后重试。",
+            api_key=api_key,
         )
 
     auto_commit = _parse_bool(os.environ.get("LAWGUARD_AUTO_COMMIT"), DEFAULT_AUTO_COMMIT)

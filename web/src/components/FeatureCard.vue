@@ -23,7 +23,7 @@ defineProps<{
 
 .feature-card:hover {
   border-color: var(--color-primary-light);
-  box-shadow: 0 4px 14px rgba(20, 51, 92, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 .feature-card__title {

@@ -126,9 +126,18 @@ def _fake_config() -> Config:
     )
 
 
-def _fake_response(text: str):
+def _fake_response(text: str, prompt_tokens: int | None = 100, completion_tokens: int | None = 20):
     response = mock.Mock()
     response.output_text = text
+    if prompt_tokens is None and completion_tokens is None:
+        response.usage = None
+    else:
+        response.usage = mock.Mock()
+        response.usage.input_tokens = prompt_tokens
+        response.usage.output_tokens = completion_tokens
+        response.usage.total_tokens = (
+            None if prompt_tokens is None or completion_tokens is None else prompt_tokens + completion_tokens
+        )
     return response
 
 
@@ -141,9 +150,10 @@ class TestPlanNextTaskRetry(unittest.TestCase):
             _fake_response("这不是合法 JSON"),
             _fake_response(json.dumps(VALID_TASK, ensure_ascii=False)),
         ]
-        task = plan_next_task(client, _fake_config(), "上下文")
+        task, usages = plan_next_task(client, _fake_config(), "上下文")
         self.assertEqual(task.task_id, "T-001")
         self.assertEqual(client.responses.create.call_count, 2)
+        self.assertEqual(len(usages), 2)
 
     def test_raises_after_two_invalid_attempts(self):
         client = mock.Mock()
@@ -151,9 +161,10 @@ class TestPlanNextTaskRetry(unittest.TestCase):
             _fake_response("不合法"),
             _fake_response("依然不合法"),
         ]
-        with self.assertRaises(PlannerError):
+        with self.assertRaises(PlannerError) as ctx:
             plan_next_task(client, _fake_config(), "上下文")
         self.assertEqual(client.responses.create.call_count, 2)
+        self.assertEqual(len(ctx.exception.usages), 2)
 
     def test_accepts_blocked_task_without_reliable_legal_source(self):
         client = mock.Mock()
@@ -168,9 +179,20 @@ class TestPlanNextTaskRetry(unittest.TestCase):
         client.responses.create.return_value = _fake_response(
             json.dumps(blocked_task, ensure_ascii=False)
         )
-        task = plan_next_task(client, _fake_config(), "上下文")
+        task, usages = plan_next_task(client, _fake_config(), "上下文")
         self.assertEqual(task.risk_level, "BLOCKED")
         self.assertEqual(client.responses.create.call_count, 1)
+        self.assertEqual(len(usages), 1)
+
+    def test_usage_unknown_when_api_omits_it(self):
+        client = mock.Mock()
+        client.responses.create.return_value = _fake_response(
+            json.dumps(VALID_TASK, ensure_ascii=False), prompt_tokens=None, completion_tokens=None
+        )
+        _task, usages = plan_next_task(client, _fake_config(), "上下文")
+        self.assertIsNone(usages[0].prompt_tokens)
+        self.assertIsNone(usages[0].completion_tokens)
+        self.assertIsNone(usages[0].total_tokens)
 
 
 class TestReviewChange(unittest.TestCase):
@@ -186,15 +208,17 @@ class TestReviewChange(unittest.TestCase):
         client.responses.create.return_value = _fake_response(
             json.dumps(fail_review, ensure_ascii=False)
         )
-        review = review_change(client, _fake_config(), "评审上下文")
+        review, usage = review_change(client, _fake_config(), "评审上下文")
         self.assertEqual(review.verdict, "FAIL")
         self.assertFalse(review.safe_to_commit)
+        self.assertEqual(usage.prompt_tokens, 100)
 
     def test_rejects_incomplete_schema(self):
         client = mock.Mock()
         client.responses.create.return_value = _fake_response('{"verdict": "PASS"}')
-        with self.assertRaises(ReviewerError):
+        with self.assertRaises(ReviewerError) as ctx:
             review_change(client, _fake_config(), "评审上下文")
+        self.assertIsNotNone(ctx.exception.usage)
 
 
 if __name__ == "__main__":
