@@ -77,32 +77,58 @@ class TestRecordCompletedTask(unittest.TestCase):
 
     def test_appends_task_and_updates_last_commit(self):
         state = progress.record_completed_task(
-            self.path, task_number=1, task_title="示例任务", commit_hash="abc1234",
+            self.path, task_number=1, task_title="示例任务",
+            commit_message="AutoDev(task-001): 示例任务",
             now_iso="2026-07-26T00:00:00", next_candidate_tasks=["候选任务 A"],
         )
         self.assertEqual(state.completed_tasks, ["task-001: 示例任务"])
-        self.assertEqual(state.last_commit, "abc1234")
+        self.assertEqual(state.last_commit, "AutoDev(task-001): 示例任务")
         self.assertEqual(state.next_candidate_tasks, ["候选任务 A"])
         self.assertEqual(state.current_task, "（无，等待 Planner 规划下一任务）")
 
+    def test_last_commit_stores_message_known_before_the_commit_exists(self):
+        # commit_message 在真正执行 git commit 之前就已经确定（用于组装本次要
+        # 提交的内容），因此可以在提交发生前写入进度文件；无需（也无法）预先
+        # 获得提交后才产生的 Git Commit Hash。
+        state = progress.record_completed_task(
+            self.path, task_number=7, task_title="任意任务",
+            commit_message="AutoDev(task-007): 任意任务",
+            now_iso="t",
+        )
+        self.assertEqual(state.last_commit, "AutoDev(task-007): 任意任务")
+
     def test_second_call_appends_without_losing_first_entry(self):
         progress.record_completed_task(
-            self.path, task_number=1, task_title="任务一", commit_hash="c1",
-            now_iso="t1", next_candidate_tasks=[],
+            self.path, task_number=1, task_title="任务一", commit_message="c1",
+            now_iso="t1",
         )
         state = progress.record_completed_task(
-            self.path, task_number=2, task_title="任务二", commit_hash="c2",
-            now_iso="t2", next_candidate_tasks=[],
+            self.path, task_number=2, task_title="任务二", commit_message="c2",
+            now_iso="t2",
         )
         self.assertEqual(state.completed_tasks, ["task-001: 任务一", "task-002: 任务二"])
         self.assertEqual(state.last_commit, "c2")
+
+    def test_next_candidate_tasks_preserved_when_not_provided(self):
+        progress.record_completed_task(
+            self.path, task_number=1, task_title="任务一", commit_message="c1",
+            now_iso="t1", next_candidate_tasks=["候选 A"],
+        )
+        state = progress.record_completed_task(
+            self.path, task_number=2, task_title="任务二", commit_message="c2",
+            now_iso="t2",
+        )
+        # 未显式传入 next_candidate_tasks 时应保留原有值，而不是被清空；
+        # 该字段现在完全由 AUTODEV_PROGRESS.md 自行维护，不再从
+        # LAWGUARD_SOT.md 同步。
+        self.assertEqual(state.next_candidate_tasks, ["候选 A"])
 
     def test_does_not_duplicate_completed_tasks_when_replayed(self):
         # record_completed_task 本身只负责追加，不做去重判断；
         # 由 orchestrator 保证每个任务只在成功提交后调用一次。
         progress.record_completed_task(
-            self.path, task_number=1, task_title="任务一", commit_hash="c1",
-            now_iso="t1", next_candidate_tasks=[],
+            self.path, task_number=1, task_title="任务一", commit_message="c1",
+            now_iso="t1",
         )
         state, _, _ = progress.load_or_repair(self.path)
         self.assertEqual(state.completed_tasks, ["task-001: 任务一"])

@@ -384,38 +384,24 @@ D:\SOFT\LawGuard
 ## 16. 开发与验收规则
 
 - 每次修改前先阅读本文件；
-- 每次完成开发后更新第 17 节"当前开发进度"；
+- 每次完成开发后更新 `docs/project/AUTODEV_PROGRESS.md`（见第 17 节），不得记录到本文件；
 - 修改后必须执行 `npm run build`（在 `web/` 目录），确保类型检查与构建均通过；
 - 若存在 lint/typecheck 命令需一并执行；
 - 验收需确认：TypeScript 无错误、页面可构建、路由刷新不报错、375px 宽度无横向滚动、
   全部页面使用简体中文、不存在表单、不存在用户数据采集、不存在统计 SDK、
   不存在 Vite 默认脚手架内容、不存在被描述为"正式官方"却未核验的链接。
 
-## 17. 当前开发进度
+## 17. 开发进度与下一步计划
 
-- [x] 项目根目录 `CLAUDE.md` 按规则更新，写入 14 条开发规则。
-- [x] `LAWGUARD_SOT.md` V1.0 完整编写。
-- [x] 安装并配置 Vue Router，创建 9 个路由页面（含 `/coming-soon` 占位页）。
-- [x] 清理 Vite 默认脚手架内容（HelloWorld、默认 hero 图、默认 favicon 等）。
-- [x] 完成首页 V1 基础版本：顶部导航、首屏、六个阶段入口卡片、核心功能区、官方渠道区、内容边界区、页脚。
-- [x] 完成 `/stages`、`/documents`、`/official-channels`、`/about`、`/privacy`、`/disclaimer`、`/legal-sources`、`/coming-soon` 页面框架，内容状态标注"待法律复核"或"待官方链接核验"。
-- [x] `npm run build` 通过。
-- [x] 新增 "P0：法律内容真实性原则" 章节，作为全项目最高优先级规则；同步更新 `CLAUDE.md`
-      与 `automation/prompts/planner_system.txt`、`automation/prompts/reviewer_system.txt`。
-- [x] 完成 automation/ 目录首次安全加固与验收：修复模型默认值硬编码、路径大小写绕过、
-      危险命令黑名单缺口（powershell 等）、密钥脱敏覆盖面、日志文件句柄泄漏等缺陷。
-- [x] 新增 "P-1：非法律意见原则"（最高优先级）、"P1：官方优先原则"、"P2：法律版本管理原则"，
-      同步更新 `CLAUDE.md` 与两份 automation prompt。
+本文件只保存项目定位、系统架构、设计原则、开发规范、技术路线等长期稳定事实，
+不记录逐日开发进度、已完成任务清单或下一步开发计划——这类信息与本文件职责不能重叠。
 
-## 18. 下一步计划
+开发进度、已完成任务（Completed Tasks）、当前任务（Current Task）、下一步候选任务
+（Next Candidate Tasks）与已知问题（Known Issues）统一记录在
+`docs/project/AUTODEV_PROGRESS.md`，由 Auto Dev 自动开发系统自动维护，请查阅该文件
+了解最新进度。
 
-- 引入本地全文搜索（V1 功能范围第 7 项），确定搜索索引方案（静态数据全文匹配）。
-- 补充六个阶段的详情页正文内容，需先完成法律复核后由 `/coming-soon` 切换为正式内容。
-- 补充文书核对清单的具体条目，需法律复核后发布。
-- 核验 12348、12309 等官方渠道的官方链接与最新联系方式后更新"待官方链接核验"状态。
-- 补充法律来源与版本记录页的具体法条引用（需可核验的正式文本来源）。
-
-## 19. 重要决策记录
+## 18. 重要决策记录
 
 - 2026-07-26：确定 V1 固定技术栈为 Vue 3 + TypeScript + Vite + Vue Router + 原生 CSS + 静态数据，不引入后端、数据库、用户系统。
 - 2026-07-26：确定路由采用 `createWebHistory`，尚未完成法律复核的阶段详情统一跳转 `/coming-soon`，不出现 404。

@@ -66,6 +66,16 @@ class TestSafeCommit(unittest.TestCase):
             service.commit([".env.local"], "feat: 测试")
         service._run.assert_not_called()
 
+    def test_commit_rejects_lawguard_sot(self):
+        # 双重保险：即便 Planner/Claude 出于任何原因把 LAWGUARD_SOT.md 放进了
+        # 待提交文件列表，Auto Commit 也必须在这一层拒绝，保证该文件在自动开发
+        # 过程中始终不被修改。
+        service = self._service_with_mocked_run()
+        service._run = mock.Mock(side_effect=AssertionError("不应调用真实 git 命令"))
+        with self.assertRaises(GitError):
+            service.commit(["LAWGUARD_SOT.md"], "feat: 测试")
+        service._run.assert_not_called()
+
     def test_commit_rejects_invalid_message_without_running_git(self):
         service = self._service_with_mocked_run()
         service._run = mock.Mock(side_effect=AssertionError("不应调用真实 git 命令"))

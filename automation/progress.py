@@ -161,19 +161,31 @@ def record_completed_task(
     *,
     task_number: int,
     task_title: str,
-    commit_hash: str,
+    commit_message: str,
     now_iso: str,
-    next_candidate_tasks: list[str],
+    next_candidate_tasks: list[str] | None = None,
 ) -> ProgressState:
-    """任务 Review PASS 且 Git Commit 成功后调用：追加已完成任务并写回文件。"""
+    """任务 Review PASS 后调用：追加已完成任务并写回文件，随后与代码改动一起提交。
+
+    调用时机在实际 `git commit` 之前（本文件的改动会和任务代码一起进入同一个
+    Commit），因此这里记录的是提交信息（commit_message），而不是提交后才产生的
+    Git Commit Hash——写入时该 Commit 尚未创建，无法预先获得其哈希值；提交信息
+    本身已足以在 `git log` 中定位到对应提交。
+
+    next_candidate_tasks 缺省（None）时保留原有值不变：Next Candidate Tasks 由
+    AUTODEV_PROGRESS.md 自行维护，不再从 LAWGUARD_SOT.md 同步（该文件只保存长期
+    稳定事实，不记录开发计划），避免两份文档职责重叠。
+    """
     state, _, _ = load_or_repair(path)
     new_state = ProgressState(
         project_stage=state.project_stage,
         last_update=now_iso,
-        last_commit=commit_hash,
+        last_commit=commit_message,
         completed_tasks=[*state.completed_tasks, f"task-{task_number:03d}: {task_title}"],
         current_task=_DEFAULT_CURRENT_TASK,
-        next_candidate_tasks=next_candidate_tasks,
+        next_candidate_tasks=(
+            state.next_candidate_tasks if next_candidate_tasks is None else next_candidate_tasks
+        ),
         known_issues=state.known_issues,
     )
     write(path, new_state)

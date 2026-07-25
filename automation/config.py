@@ -24,10 +24,6 @@ CLAUDE_MD_FILE = PROJECT_ROOT / "CLAUDE.md"
 # Auto Dev 全自动循环专属的进度台账，独立于 LAWGUARD_SOT.md 的"当前开发进度"章节，
 # 由 orchestrator 在每个任务自动提交后维护，供 Planner 下一轮读取以避免重复开发。
 PROGRESS_FILE = PROJECT_ROOT / "docs" / "project" / "AUTODEV_PROGRESS.md"
-# 上述文件相对于项目根目录的固定相对路径，供 Git 提交时使用；不依赖
-# PROGRESS_FILE.relative_to(PROJECT_ROOT) 动态计算，避免测试中重定向
-# PROGRESS_FILE 到临时目录时因不在 PROJECT_ROOT 之下而报错。
-PROGRESS_FILE_RELATIVE = "docs/project/AUTODEV_PROGRESS.md"
 
 DEFAULT_AUTO_COMMIT = False
 DEFAULT_CLAUDE_TIMEOUT_SECONDS = 1800

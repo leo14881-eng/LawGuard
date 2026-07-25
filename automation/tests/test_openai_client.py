@@ -22,7 +22,10 @@ VALID_TASK = {
     "scope": "示例范围",
     "acceptance_criteria": ["构建通过"],
     "files_allowed": ["web/src/data/stages.ts"],
-    "files_forbidden": ["LAWGUARD_SOT.md"],
+    # LAWGUARD_SOT.md 现在属于全局禁止路径（见 security.py 的
+    # FORBIDDEN_PATH_PREFIXES），Planner 不应再把它列入 files_forbidden——
+    # 列出反而会被 is_safe_relative_path 判定为非法路径而导致校验失败。
+    "files_forbidden": ["web/src/data/legal_sources.ts"],
     "validation_commands": ["npm run build"],
     "risk_level": "LOW",
     "requires_sot_update": False,

@@ -53,6 +53,10 @@ FORBIDDEN_PATH_PREFIXES = [
     ".venv",
     "automation/runtime",
     "automation/reports",
+    # LAWGUARD_SOT.md 只保存长期稳定事实，开发进度统一记录在
+    # docs/project/AUTODEV_PROGRESS.md；Auto Dev 不得自动修改 LAWGUARD_SOT.md，
+    # 此处在校验与提交两层同时拦截，不依赖 Planner Prompt 单方面遵守。
+    "LAWGUARD_SOT.md",
 ]
 
 

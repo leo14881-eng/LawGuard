@@ -28,8 +28,11 @@ _MAX_TOTAL_CHARS = 20000
 # 规划器只需要"当前能做什么、还差什么"这类信息即可决策下一步开发任务；
 # P-1/P0/P1/P2 等最高治理原则已经在 planner_system.txt 中以编号方式引用，
 # 不需要在每次请求的上下文里重复发送整章原文，借此显著压缩 Token 消耗。
+# LAWGUARD_SOT.md 只保存长期稳定事实，不再包含开发进度/下一步计划相关章节
+# （职责已统一收归 docs/project/AUTODEV_PROGRESS.md，见下方 progress_mod），
+# 因此这里不再提取"当前开发进度""下一步计划"等章节关键词。
 _SOT_PLANNER_SECTION_KEYWORDS = (
-    "V1 功能范围", "V1 明确不做", "页面清单", "当前开发进度", "下一步计划",
+    "V1 功能范围", "V1 明确不做", "页面清单",
 )
 _CLAUDE_MD_PLANNER_SECTION_KEYWORDS = (
     "项目状态", "仓库结构", "常用命令", "架构说明",
@@ -115,23 +118,6 @@ def build_file_tree(root: Path) -> str:
 
     walk(root, 0)
     return "\n".join(lines)
-
-
-def read_sot_next_steps() -> list[str]:
-    """读取 LAWGUARD_SOT.md「下一步计划」章节的候选任务列表。
-
-    仅作为 Auto Dev 进度台账（AUTODEV_PROGRESS.md）"Next Candidate Tasks" 的参考
-    展示来源，引用项目已有的人工规划内容，不代表已确认的下一个任务，具体任务仍由
-    Planner 每轮自主决策。
-    """
-    full = _read_text(cfg.SOT_FILE)
-    section = _extract_markdown_sections(full, ("下一步计划",))
-    items = []
-    for line in section.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("- "):
-            items.append(stripped[2:].strip())
-    return items
 
 
 def build_planner_context() -> str:

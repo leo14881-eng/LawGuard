@@ -196,8 +196,9 @@ def validate_task_payload(data: dict) -> list[str]:
     if issues:
         return issues
 
-    # BLOCKED 任务代表规划器判断当前无法安全生成任务，不涉及实际文件改动，跳过文件与命令校验
-    if data["risk_level"] != "BLOCKED":
+    # DONE（无更多开发任务）与 BLOCKED（存在方向但无法安全继续）均不涉及实际文件改动，
+    # 跳过文件与命令校验。
+    if data["risk_level"] not in ("BLOCKED", "DONE"):
         issues.extend(check_files_lists(data["files_allowed"], data["files_forbidden"]))
         for command in data["validation_commands"]:
             if normalize_command(command) is None:

@@ -5,13 +5,14 @@
                                        [--model MODEL] [--verbose] [--list-models]
 
 Auto Dev 启动后持续自动循环执行「Planner → Claude Code → Build → Test → Review →
-Git Commit → 下一任务」，不等待人工确认，直到满足下方任一停止条件才退出：
-Planner 判断已无更多可安全规划的任务、Claude 执行失败、构建/测试失败、Review 未通过
-（FAIL 或 BLOCKED）、OpenAI 调用失败、已有的超时限制触发，或用户按 Ctrl+C 主动中断。
-每个任务评审通过后立即自动 `git add` + `git commit`（提交信息统一为
-`AutoDev(task-NNN): ...`，任务序号自动递增），仅提交到本地仓库，任何情况下都不会执行
-`git push`。`--dry-run`、`--no-commit`、`--allow-dirty` 仍只用于单任务预览/调试，
-使用这些参数时不会进入连续循环。
+更新 Progress → Git Commit → 下一任务」，不等待人工确认，直到满足下方任一停止条件
+才退出：Planner 返回 DONE（已无更多可安全规划的新任务）、Planner 返回 BLOCKED（存在
+开发方向但因权限/依赖/环境/资源或治理原则限制无法安全继续）、Claude 执行失败、构建/
+测试失败、Review 未通过（FAIL 或 BLOCKED）、OpenAI 调用失败、已有的超时限制触发，或
+用户按 Ctrl+C 主动中断。每个任务评审通过后先更新 `docs/project/AUTODEV_PROGRESS.md`，
+再与本次代码改动一起执行**一次** `git commit`（提交信息统一为 `AutoDev(task-NNN): ...`，
+任务序号自动递增），仅提交到本地仓库，任何情况下都不会执行 `git push`。`--dry-run`、
+`--no-commit`、`--allow-dirty` 仍只用于单任务预览/调试，使用这些参数时不会进入连续循环。
 """
 from __future__ import annotations
 
@@ -32,7 +33,6 @@ if __package__ in (None, ""):
 from automation import claude_runner, context_loader, openai_client, progress, validator
 from automation.config import (
     PROGRESS_FILE,
-    PROGRESS_FILE_RELATIVE,
     PROJECT_ROOT,
     REPORTS_DIR,
     RUNTIME_DIR,
@@ -305,8 +305,16 @@ def run_task_cycle(args: argparse.Namespace, task_number: int) -> tuple[int, str
     logger.info("任务目标：%s", task.objective)
     logger.info("风险等级：%s", task.risk_level)
 
+    if task.risk_level == "DONE":
+        msg = f"规划器判断当前没有更多可安全规划的开发任务，Auto Dev 正常结束。原因：{task.rationale}"
+        logger.info(msg)
+        return finalize("PLANNER_DONE", msg, EXIT_SUCCESS)
+
     if task.risk_level == "BLOCKED":
-        msg = f"规划器判断当前无法安全生成任务，已停止（不调用 Claude，不提交）。原因：{task.rationale}"
+        msg = (
+            "规划器判断存在开发方向，但由于权限/依赖/环境/资源不足或治理原则要求而无法安全"
+            f"继续（不调用 Claude，不提交）。原因：{task.rationale}"
+        )
         logger.warning(msg)
         return finalize("BLOCKED_BY_PLANNER", msg, EXIT_SECURITY_FAILURE)
 
@@ -431,48 +439,34 @@ def run_task_cycle(args: argparse.Namespace, task_number: int) -> tuple[int, str
         logger.error(msg)
         return finalize("REVIEW_PASSED_NOT_COMMITTED", msg, EXIT_SUCCESS)
 
+    # 第九步：Review PASS 后先更新 Auto Dev 进度台账（docs/project/AUTODEV_PROGRESS.md），
+    # 再与本次任务的代码改动一起提交，保证一个任务只产生一个 Commit；回滚该 Commit 时
+    # 代码与 Progress 记录保持一致，不会出现两者不同步的中间状态。
+    commit_message = build_autodev_commit_message(task_number, review.commit_message)
+    logger.info("Update Progress...")
+    progress.record_completed_task(
+        PROGRESS_FILE,
+        task_number=task_number,
+        task_title=task.title,
+        commit_message=commit_message,
+        now_iso=_now_iso(),
+    )
+
     changed_files = git.get_changed_files()
     if not changed_files:
         logger.info("没有检测到文件改动，无需提交。")
         return finalize("REVIEW_PASSED_NOT_COMMITTED", None, EXIT_SUCCESS)
 
     try:
-        commit_message = build_autodev_commit_message(task_number, review.commit_message)
         logger.info("Auto Commit 中，Commit Message：%s", commit_message)
         commit_hash = git.commit(changed_files, commit_message)
         report.git_commit = commit_hash
         logger.info("已自动提交，Commit Hash：%s", commit_hash)
+        return finalize("COMMITTED", None, EXIT_SUCCESS)
     except GitError as exc:
         msg = f"自动提交失败：{exc}"
         logger.error(msg)
         return finalize("COMMIT_FAILED", msg, EXIT_GENERAL_FAILURE)
-
-    # 第九步：更新 Auto Dev 进度台账（docs/project/AUTODEV_PROGRESS.md）。
-    # 单独提交这一文件（而不是并入上一步的任务提交），保持任务代码提交内容纯粹，
-    # 同时确保提交后工作区恢复干净，供下一任务的工作区检查正常通过。
-    logger.info("Update Progress...")
-    try:
-        next_candidates = context_loader.read_sot_next_steps()
-        progress.record_completed_task(
-            PROGRESS_FILE,
-            task_number=task_number,
-            task_title=task.title,
-            commit_hash=commit_hash,
-            now_iso=_now_iso(),
-            next_candidate_tasks=next_candidates,
-        )
-        progress_commit_message = build_autodev_commit_message(
-            task_number, f"更新 Auto Dev 进度（{task.title}）"
-        )
-        progress_commit_hash = git.commit([PROGRESS_FILE_RELATIVE], progress_commit_message)
-        logger.info("Auto Dev 进度已更新，Commit Hash：%s", progress_commit_hash)
-    except GitError as exc:
-        # 进度台账提交失败不推翻本任务已经成功提交的事实，只记录警告；
-        # 工作区会因此保留未提交的进度文件改动，下一任务启动前的工作区检查
-        # 会据此判断是否能安全继续，Auto Loop 无需为此单独增加处理逻辑。
-        logger.warning("Auto Dev 进度提交失败（任务本身已成功提交）：%s", exc)
-
-    return finalize("COMMITTED", None, EXIT_SUCCESS)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -514,7 +508,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Task #{task_number} Auto Commit 完成，Starting Task #{task_number + 1}...")
             continue
 
-        if final_status == "BLOCKED_BY_PLANNER":
+        if final_status == "PLANNER_DONE":
             print("Planner: DONE")
             print("Auto Dev Finished")
         else:

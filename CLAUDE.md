@@ -51,7 +51,10 @@ JSON/开发日志、"以后再美化"式交付、页面各自定义样式、炫�
 1. 所有新增代码注释使用简体中文书写。
 2. 所有用户界面文案使用简体中文，不得展示生硬状态码或英文内部名称（如 404、undefined、error code 等）。
 3. 每次修改前先阅读 `LAWGUARD_SOT.md`，确保改动符合当前产品边界与既定信息架构。
-4. 每次完成开发后，必须更新 `LAWGUARD_SOT.md` 中的"当前开发进度"部分。
+4. 每次完成开发后，必须更新 `docs/project/AUTODEV_PROGRESS.md` 中的开发进度记录
+   （Completed Tasks / Last Update 等）。`LAWGUARD_SOT.md` 只保存项目定位、系统架构、
+   设计原则、开发规范、技术路线等长期稳定事实，禁止记录开发进度、已完成任务或下一步
+   计划——两者职责不得重叠，不得自动或手动把进度类内容写回 `LAWGUARD_SOT.md`。
 5. 修改后必须在 `web/` 目录执行 `npm run build`，确保构建通过。
 6. 若项目配置了 lint 或 typecheck 命令，也必须一并执行。
 7. 不得读取或修改 `D:\SOFT\LawGuard` 之外的文件。
@@ -100,3 +103,19 @@ npm run preview   # 本地预览生产构建
 项目只长期维护 `CLAUDE.md` 与 `LAWGUARD_SOT.md` 两份项目级文档。
 禁止创建 SESSION_SUMMARY.md、单独架构/产品说明文档、每日总结文档或其他无必要的 Markdown 文件。
 `web/README.md` 为脚手架自带说明，可保留，但项目事实以 `LAWGUARD_SOT.md` 为准。
+`docs/project/AUTODEV_PROGRESS.md` 为唯一例外：它是 Auto Dev 自动开发系统的进度台账
+（Last Update / Last Commit / Completed Tasks / Current Task / Next Candidate Tasks /
+Known Issues），由 `automation/progress.py` 自动创建与维护，不属于"说明性 Markdown
+文档"，不受本节"禁止创建"限制约束。
+
+## SOT 与 Progress 的职责边界
+
+`LAWGUARD_SOT.md` 与 `docs/project/AUTODEV_PROGRESS.md` 职责不能重叠：
+
+- `LAWGUARD_SOT.md`：只保存项目定位、系统架构、设计原则、开发规范、技术路线等
+  长期稳定事实；禁止记录逐日开发进度、已完成任务清单或下一步开发计划。
+- `docs/project/AUTODEV_PROGRESS.md`：唯一的开发进度来源，负责 Last Update、
+  Last Commit、Completed Tasks、Current Task、Next Candidate Tasks、Known Issues。
+
+Auto Dev 只能自动更新 `docs/project/AUTODEV_PROGRESS.md`，不得自动修改
+`LAWGUARD_SOT.md`。

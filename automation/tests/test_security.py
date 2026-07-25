@@ -26,6 +26,12 @@ class TestPathSafety(unittest.TestCase):
         self.assertFalse(is_safe_relative_path("automation/runtime/x.json"))
         self.assertFalse(is_safe_relative_path("automation/reports/x.md"))
 
+    def test_rejects_lawguard_sot(self):
+        # LAWGUARD_SOT.md 只保存长期稳定事实，Auto Dev 不得自动修改；
+        # 与 CLAUDE.md 的进度记录职责统一收归 docs/project/AUTODEV_PROGRESS.md。
+        self.assertFalse(is_safe_relative_path("LAWGUARD_SOT.md"))
+        self.assertFalse(is_safe_relative_path("lawguard_sot.md"))
+
     def test_rejects_absolute_and_drive_paths(self):
         self.assertFalse(is_safe_relative_path("D:/SOFT/LawGuard/web"))
         self.assertFalse(is_safe_relative_path("/etc/passwd"))

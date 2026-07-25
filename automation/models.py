@@ -6,8 +6,13 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-# 任务风险等级允许的取值；BLOCKED 表示规划器判断当前无法安全生成任务
-RISK_LEVELS = {"LOW", "MEDIUM", "HIGH", "BLOCKED"}
+# 任务风险等级允许的取值：
+# LOW/MEDIUM/HIGH 为正常任务的风险分级；
+# DONE 表示当前项目已没有新的开发任务（正常结束）；
+# BLOCKED 表示存在可规划的开发方向，但由于权限、依赖、环境、资源不足，
+# 或 P-1/P0/P1/P2 治理原则要求（例如缺少可核验法律来源、涉及个案判断）
+# 而无法安全生成具体任务。
+RISK_LEVELS = {"LOW", "MEDIUM", "HIGH", "BLOCKED", "DONE"}
 # 评审结论允许的取值
 REVIEW_VERDICTS = {"PASS", "FAIL", "BLOCKED"}
 

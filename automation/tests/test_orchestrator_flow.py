@@ -232,6 +232,8 @@ class TestClaudeFailureBlocksValidationAndCommit(_OrchestratorTestBase):
 
 
 class TestBlockedByPlannerSkipsClaude(_OrchestratorTestBase):
+    """risk_level=BLOCKED：存在开发方向，但因权限/依赖/环境/资源等原因无法安全继续。"""
+
     @mock.patch("automation.claude_runner.run_claude")
     @mock.patch("automation.openai_client.plan_next_task")
     @mock.patch("automation.openai_client.create_client")
@@ -246,10 +248,42 @@ class TestBlockedByPlannerSkipsClaude(_OrchestratorTestBase):
         self.mock_git.commit.assert_not_called()
 
 
-class TestAutoLoopContinuesAfterCommit(_OrchestratorTestBase):
-    """验证 Auto Dev 全自动循环：任务提交成功后立即开始下一任务，直到 Planner 无更多任务为止。"""
+class TestPlannerDoneEndsAutoDevSuccessfully(_OrchestratorTestBase):
+    """risk_level=DONE：项目在 V1 范围内已没有更多可安全规划的新开发任务，正常结束。"""
 
-    @mock.patch("automation.context_loader.read_sot_next_steps", return_value=[])
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_done_task_skips_claude_and_exits_successfully(self, _ctx, _create_client, mock_plan, mock_run_claude):
+        mock_plan.return_value = _fake_plan_result(risk_level="DONE")
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            exit_code = orchestrator.main([])
+        output = stdout.getvalue()
+
+        # DONE 代表正常结束（没有更多任务），而不是安全故障，退出码应为 EXIT_SUCCESS。
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        mock_run_claude.assert_not_called()
+        self.mock_git.commit.assert_not_called()
+        self.assertIn("Planner: DONE", output)
+        self.assertIn("Auto Dev Finished", output)
+
+
+class TestAutoLoopContinuesAfterCommit(_OrchestratorTestBase):
+    """验证 Auto Dev 全自动循环：任务提交成功后立即开始下一任务，直到 Planner 返回 DONE 为止。"""
+
+    def setUp(self):
+        super().setUp()
+        # 模拟真实 Git 行为：Progress 文件已在 commit 前写入磁盘，因此
+        # get_changed_files() 应同时包含任务代码文件与 AUTODEV_PROGRESS.md，
+        # 用于验证两者被合并进同一次 Commit。
+        self.mock_git.get_changed_files.return_value = [
+            "web/src/data/stages.ts",
+            "docs/project/AUTODEV_PROGRESS.md",
+        ]
+
     @mock.patch("automation.claude_runner.run_claude")
     @mock.patch("automation.validator.run_validation")
     @mock.patch("automation.openai_client.review_change")
@@ -259,13 +293,12 @@ class TestAutoLoopContinuesAfterCommit(_OrchestratorTestBase):
     @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
     def test_committed_task_triggers_next_task_until_planner_done(
         self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
-        _next_steps,
     ):
-        # 第一个任务规划为 LOW（可安全执行），第二次调用规划器时返回 BLOCKED，
-        # 模拟"已无更多可安全规划的任务"，用于验证 Auto Loop 会在此处正常停止。
+        # 第一个任务规划为 LOW（可安全执行），第二次调用规划器时返回 DONE，
+        # 模拟"当前没有更多可安全规划的新任务"，用于验证 Auto Loop 会在此处正常停止。
         mock_plan.side_effect = [
             _fake_plan_result(risk_level="LOW"),
-            _fake_plan_result(risk_level="BLOCKED"),
+            _fake_plan_result(risk_level="DONE"),
         ]
         mock_run_claude.return_value = _fake_claude_result()
         mock_validate.return_value = ([], True)
@@ -276,36 +309,33 @@ class TestAutoLoopContinuesAfterCommit(_OrchestratorTestBase):
             exit_code = orchestrator.main([])
         output = stdout.getvalue()
 
-        # 第二个任务因规划器判断无更多任务而结束，退出码沿用既有的
-        # BLOCKED_BY_PLANNER 语义（EXIT_SECURITY_FAILURE），只是本场景下代表
-        # "Auto Dev 正常跑完所有可安全规划的任务"，而非安全故障。
-        self.assertEqual(exit_code, orchestrator.EXIT_SECURITY_FAILURE)
+        # DONE 代表正常跑完所有可安全规划的任务，退出码应为 EXIT_SUCCESS。
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
         self.assertEqual(mock_plan.call_count, 2)
         mock_run_claude.assert_called_once()
 
-        # 每个成功任务对应两次提交：任务代码本身 + Auto Dev 进度台账。
-        self.assertEqual(self.mock_git.commit.call_count, 2)
-        task_commit_files, task_commit_message = self.mock_git.commit.call_args_list[0][0]
-        progress_commit_files, progress_commit_message = self.mock_git.commit.call_args_list[1][0]
-        self.assertEqual(task_commit_files, ["web/src/data/stages.ts"])
-        self.assertEqual(task_commit_message, "AutoDev(task-001): feat: 测试改动")
-        self.assertEqual(progress_commit_files, [orchestrator.PROGRESS_FILE_RELATIVE])
-        self.assertTrue(progress_commit_message.startswith("AutoDev(task-001): "))
+        # 一个任务只产生一个 Commit：代码改动与 AUTODEV_PROGRESS.md 一起提交。
+        self.mock_git.commit.assert_called_once()
+        commit_files, commit_message = self.mock_git.commit.call_args[0]
+        self.assertEqual(
+            set(commit_files),
+            {"web/src/data/stages.ts", "docs/project/AUTODEV_PROGRESS.md"},
+        )
+        self.assertEqual(commit_message, "AutoDev(task-001): feat: 测试改动")
 
         self.assertIn("Task #1", output)
         self.assertIn("Task #2", output)
         self.assertIn("Planner: DONE", output)
         self.assertIn("Auto Dev Finished", output)
 
-        # 进度台账已按预期写入并记录本次完成的任务。
+        # 进度台账在 Commit 之前已经写入磁盘，且记录了本次完成的任务。
         self.assertTrue(self.progress_file.exists())
         progress_state, was_missing, was_repaired = progress.load_or_repair(self.progress_file)
         self.assertFalse(was_missing)
         self.assertFalse(was_repaired)
         self.assertEqual(progress_state.completed_tasks, ["task-001: 示例任务"])
-        self.assertEqual(progress_state.last_commit, "abc1234")
+        self.assertEqual(progress_state.last_commit, commit_message)
 
-    @mock.patch("automation.context_loader.read_sot_next_steps", return_value=[])
     @mock.patch("automation.claude_runner.run_claude")
     @mock.patch("automation.validator.run_validation")
     @mock.patch("automation.openai_client.review_change")
@@ -315,14 +345,13 @@ class TestAutoLoopContinuesAfterCommit(_OrchestratorTestBase):
     @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
     def test_commit_message_task_number_increments_across_tasks(
         self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
-        _next_steps,
     ):
-        # 连续两个任务都成功提交，第三次规划返回 BLOCKED 结束循环；
+        # 连续两个任务都成功提交，第三次规划返回 DONE 结束循环；
         # 验证提交信息中的任务序号按 001、002 递增，而非使用随机或固定编号。
         mock_plan.side_effect = [
             _fake_plan_result(risk_level="LOW"),
             _fake_plan_result(risk_level="LOW"),
-            _fake_plan_result(risk_level="BLOCKED"),
+            _fake_plan_result(risk_level="DONE"),
         ]
         mock_run_claude.return_value = _fake_claude_result()
         mock_validate.return_value = ([], True)
@@ -330,17 +359,13 @@ class TestAutoLoopContinuesAfterCommit(_OrchestratorTestBase):
 
         exit_code = orchestrator.main([])
 
-        self.assertEqual(exit_code, orchestrator.EXIT_SECURITY_FAILURE)
-        # 两个任务各自产生「任务提交 + 进度提交」，共 4 次 git commit 调用。
-        self.assertEqual(self.mock_git.commit.call_count, 4)
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        # 每个任务只产生一次 Commit，两个任务共 2 次 git commit 调用。
+        self.assertEqual(self.mock_git.commit.call_count, 2)
         task1_message = self.mock_git.commit.call_args_list[0][0][1]
-        progress1_message = self.mock_git.commit.call_args_list[1][0][1]
-        task2_message = self.mock_git.commit.call_args_list[2][0][1]
-        progress2_message = self.mock_git.commit.call_args_list[3][0][1]
+        task2_message = self.mock_git.commit.call_args_list[1][0][1]
         self.assertEqual(task1_message, "AutoDev(task-001): feat: 测试改动")
-        self.assertTrue(progress1_message.startswith("AutoDev(task-001): "))
         self.assertEqual(task2_message, "AutoDev(task-002): feat: 测试改动")
-        self.assertTrue(progress2_message.startswith("AutoDev(task-002): "))
 
         progress_state, _, _ = progress.load_or_repair(self.progress_file)
         self.assertEqual(
@@ -352,7 +377,13 @@ class TestAutoLoopContinuesAfterCommit(_OrchestratorTestBase):
 class TestAutoLoopStartupRecovery(_OrchestratorTestBase):
     """验证进程重启后能从 AUTODEV_PROGRESS.md 恢复状态，且任务序号接续、不重复计数。"""
 
-    @mock.patch("automation.context_loader.read_sot_next_steps", return_value=[])
+    def setUp(self):
+        super().setUp()
+        self.mock_git.get_changed_files.return_value = [
+            "web/src/data/stages.ts",
+            "docs/project/AUTODEV_PROGRESS.md",
+        ]
+
     @mock.patch("automation.claude_runner.run_claude")
     @mock.patch("automation.validator.run_validation")
     @mock.patch("automation.openai_client.review_change")
@@ -362,34 +393,35 @@ class TestAutoLoopStartupRecovery(_OrchestratorTestBase):
     @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
     def test_second_run_resumes_task_numbering_and_history(
         self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
-        _next_steps,
     ):
         mock_run_claude.return_value = _fake_claude_result()
         mock_validate.return_value = ([], True)
         mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
 
-        # 第一次“启动”：完成 task-001 后 Planner 返回 BLOCKED，进程退出。
+        # 第一次“启动”：完成 task-001 后 Planner 返回 DONE，进程正常退出。
         mock_plan.side_effect = [
             _fake_plan_result(risk_level="LOW"),
-            _fake_plan_result(risk_level="BLOCKED"),
+            _fake_plan_result(risk_level="DONE"),
         ]
-        orchestrator.main([])
-        self.assertEqual(self.mock_git.commit.call_count, 2)
+        first_exit_code = orchestrator.main([])
+        self.assertEqual(first_exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(self.mock_git.commit.call_count, 1)
 
         # 模拟进程重启：不删除进度文件，重新调用 main()。
         self.mock_git.commit.reset_mock()
         mock_plan.side_effect = [
             _fake_plan_result(risk_level="LOW"),
-            _fake_plan_result(risk_level="BLOCKED"),
+            _fake_plan_result(risk_level="DONE"),
         ]
 
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
-            orchestrator.main([])
+            second_exit_code = orchestrator.main([])
         output = stdout.getvalue()
 
         # 第二次启动应打印“已恢复”提示，且新任务编号从 task-002 开始，
         # 而不是重新从 task-001 计数。
+        self.assertEqual(second_exit_code, orchestrator.EXIT_SUCCESS)
         self.assertIn("已恢复 Auto Dev 进度", output)
         task_commit_message = self.mock_git.commit.call_args_list[0][0][1]
         self.assertEqual(task_commit_message, "AutoDev(task-002): feat: 测试改动")

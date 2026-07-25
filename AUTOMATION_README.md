@@ -10,18 +10,20 @@
 1. 检查项目环境与 Git 工作区状态；
 2. 读取 `LAWGUARD_SOT.md`、`CLAUDE.md`、当前 Git 状态与 Auto Dev 进度台账
    （`docs/project/AUTODEV_PROGRESS.md`，避免重复开发已完成任务）；
-3. 调用 OpenAI（担任法护 CTO 角色）规划**一项**明确、可执行的下一步开发任务；
+3. 调用 OpenAI（担任法护 CTO 角色）规划**一项**明确、可执行的下一步开发任务，或返回
+   `DONE`（已无更多可安全规划的新任务）/ `BLOCKED`（存在开发方向但因权限/依赖/环境/
+   资源或治理原则限制无法安全继续）；
 4. 非交互调用本地 Claude Code CLI 执行该任务；
 5. 自动执行构建与验证；
 6. 调用 OpenAI 对本次改动进行代码评审；
-7. 仅当评审明确通过、验证全部成功、且配置允许时，才自动提交 Git（默认关闭）；
-8. 提交成功后自动更新 `docs/project/AUTODEV_PROGRESS.md` 并单独提交；
-9. 立即开始下一个任务，重复以上流程；
-10. 每一轮都会生成结构化运行记录与中文摘要报告。
+7. 评审 PASS 且允许自动提交时，先更新 `docs/project/AUTODEV_PROGRESS.md`，再把该文件
+   与本次任务代码改动合并为**一次** Git Commit；
+8. 立即开始下一个任务，重复以上流程；
+9. 每一轮都会生成结构化运行记录与中文摘要报告。
 
-**不会等待人工确认**，只有满足以下条件之一才会停止：Planner 判断已无更多可安全规划的
-任务、Claude 执行失败、构建/测试失败、Review 未通过（FAIL 或 BLOCKED）、OpenAI 调用
-失败、已有的超时限制触发，或用户按 `Ctrl+C` 主动中断。`--dry-run`、`--no-commit`、
+**不会等待人工确认**，只有满足以下条件之一才会停止：Planner 返回 `DONE`、Planner 返回
+`BLOCKED`、Claude 执行失败、构建/测试失败、Review 未通过（`FAIL` 或 `BLOCKED`）、OpenAI
+调用失败、已有的超时限制触发，或用户按 `Ctrl+C` 主动中断。`--dry-run`、`--no-commit`、
 `--allow-dirty` 由于本身不会产生提交，效果等同于只执行一个任务后停止，适合单任务预览
 与调试，不会进入连续循环。
 
@@ -53,13 +55,21 @@ docs/project/AUTODEV_PROGRESS.md   # Auto Dev 进度台账（纳入 Git，跨进
 - **Auto Loop**：`orchestrator.main()` 在一个 `while True` 循环中反复调用单任务流水线；
   只有某个任务成功评审并自动提交（状态 `COMMITTED`）时才立即开始下一个任务，其余任何
   终止状态都会结束循环。
-- **Auto Commit**：评审 PASS 且允许自动提交时，先提交任务本身改动的文件，提交信息统一为
+- **Planner 终止语义**：`DONE` 表示项目在 V1 范围内已没有更多可安全规划的新任务（正常
+  结束，`Auto Dev Finished`）；`BLOCKED` 表示确实存在开发方向，但因权限、依赖、环境、
+  资源不足，或 P-1/P0/P1/P2 治理原则要求（例如缺少可核验法律来源、涉及个案判断）而无法
+  安全继续，两者语义不同，不会混用。
+- **Auto Commit**：评审 PASS 且允许自动提交时，先更新 `docs/project/AUTODEV_PROGRESS.md`，
+  再把该文件与本次任务代码改动**合并为一次** Git Commit，提交信息统一为
   `AutoDev(task-NNN): <评审器生成的简短说明>`（`NNN` 为任务序号，自动递增，不使用随机
-  文案）。任何情况下都不会执行 `git push`，所有提交仅保留在本地仓库。
-- **Progress 管理**：任务提交成功后，立即更新并单独提交
-  `docs/project/AUTODEV_PROGRESS.md`（记录 Project Stage / Last Update / Last Commit /
-  Completed Tasks / Current Task / Next Candidate Tasks / Known Issues）。Planner 每轮
-  规划前都会读取该文件，据此避免重复开发 Completed Tasks 中已完成的任务。
+  文案）。一个任务只产生一个 Commit，回滚该 Commit 时代码与 Progress 记录保持一致。
+  任何情况下都不会执行 `git push`，所有提交仅保留在本地仓库。
+- **Progress 管理**：`docs/project/AUTODEV_PROGRESS.md` 是唯一的开发进度来源（Last
+  Update / Last Commit / Completed Tasks / Current Task / Next Candidate Tasks /
+  Known Issues）。`LAWGUARD_SOT.md` 只保存项目定位、系统架构、设计原则、开发规范、
+  技术路线等长期稳定事实，Auto Dev **不会**、也不允许自动修改 `LAWGUARD_SOT.md`
+  （已在 Planner 校验与 Git 提交两层强制拦截）。Planner 每轮规划前都会读取进度台账，
+  据此避免重复开发 Completed Tasks 中已完成的任务。
 - **启动恢复**：每次启动都会优先读取 `docs/project/AUTODEV_PROGRESS.md`；文件不存在时
   自动创建默认模板，格式异常（缺少必需章节）时自动重建为默认模板，均不会因此停止运行；
   任务序号会从已记录的 Completed Tasks 数量之后接续编号，不会在重启后从 `task-001`
@@ -209,10 +219,11 @@ LAWGUARD_AUTO_COMMIT=true
 python automation/orchestrator.py
 ```
 
-系统会持续自动循环执行「规划 → Claude 执行 → 构建/测试 → 评审 → 自动提交 → 更新进度 →
-下一任务」，全程无需人工确认，直到 Planner 判断已无更多可安全规划的任务（此时会输出
-`Planner: DONE` 与 `Auto Dev Finished` 并正常退出）或触发某个停止条件为止。系统仍会在
-评审未通过、验证失败、工作区不干净（`--allow-dirty` 模式）等情况下拒绝提交，并结束循环。
+系统会持续自动循环执行「规划 → Claude 执行 → 构建/测试 → 评审 → 更新进度 → 自动提交 →
+下一任务」，全程无需人工确认，直到 Planner 返回 `DONE`（已无更多可安全规划的新任务，
+此时会输出 `Planner: DONE` 与 `Auto Dev Finished` 并正常退出）或触发某个停止条件为止。
+系统仍会在评审未通过、验证失败、工作区不干净（`--allow-dirty` 模式）等情况下拒绝提交，
+并结束循环。
 
 ## 10. 如何查看报告
 
@@ -238,15 +249,18 @@ python automation/orchestrator.py
 
 Auto Loop 只在以下情况停止，除此之外不会等待人工确认：
 
-1. Planner 判断已无更多可安全规划的任务（输出 `Planner: DONE` / `Auto Dev Finished`）；
-2. Claude Code 执行失败；
-3. 构建（`npm run build`）失败；
-4. 任务附加测试命令失败；
-5. Review 结论为 `FAIL`；
-6. Review 结论为 `BLOCKED`；
-7. 调用 OpenAI（Planner 或 Reviewer）失败；
-8. 触发已有的 Claude/OpenAI 超时限制；
-9. 用户按 `Ctrl+C` 主动中断（系统不会在中断瞬间执行提交）。
+1. Planner 返回 `DONE`（已无更多可安全规划的新任务，输出 `Planner: DONE` /
+   `Auto Dev Finished`，正常结束）；
+2. Planner 返回 `BLOCKED`（存在开发方向但因权限/依赖/环境/资源或治理原则限制无法
+   安全继续）；
+3. Claude Code 执行失败；
+4. 构建（`npm run build`）失败；
+5. 任务附加测试命令失败；
+6. Review 结论为 `FAIL`；
+7. Review 结论为 `BLOCKED`；
+8. 调用 OpenAI（Planner 或 Reviewer）失败；
+9. 触发已有的 Claude/OpenAI 超时限制；
+10. 用户按 `Ctrl+C` 主动中断（系统不会在中断瞬间执行提交）。
 
 本系统不启动任何后台常驻服务，关闭终端窗口即代表停止运行。
 
