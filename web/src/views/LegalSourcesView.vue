@@ -2,6 +2,7 @@
 import PageHeader from '../components/PageHeader.vue'
 import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import SourceCitationCard from '../components/SourceCitationCard.vue'
+import { legalSources } from '../data/legal_sources'
 </script>
 
 <template>
@@ -25,15 +26,25 @@ import SourceCitationCard from '../components/SourceCitationCard.vue'
     <section class="section">
       <h2>版本记录</h2>
       <p class="lead">
-        当前为 V1 初始版本，尚未收录具体法律条文引用。以下条目将在完成法律复核后逐步补充，
-        每条记录会展示官方来源、法律版本与最后核验日期。
+        当前为 V1 初始版本，以下为候选官方来源记录。每条记录呈现顺序统一为
+        "官方来源 → LawGuard 解释 → 辅助说明"：先展示官方来源名称、链接、版本与最后核验日期，
+        再展示 LawGuard 的说明文字，最后展示辅助提示。链接、版本与核验日期在完成人工核验前
+        均标注为"待核验"，不作为已核验的法律条文引用。
       </p>
-      <SourceCitationCard
-        source-name="V1 尚未收录具体法律条文引用"
-        status="pending"
-      >
-        后续版本将在确认可核验的官方来源并完成法律复核后，逐条补充为独立的来源记录卡片。
-      </SourceCitationCard>
+      <div class="grid grid-2">
+        <SourceCitationCard
+          v-for="source in legalSources"
+          :key="source.id"
+          :source-name="source.title"
+          :source-ref="source.url"
+          :version="source.version"
+          :verified-date="source.lastVerifiedDate"
+          :status="source.status"
+        >
+          <p class="source-explanation">{{ source.explanation }}</p>
+          <p class="source-note">{{ source.note }}</p>
+        </SourceCitationCard>
+      </div>
     </section>
   </div>
 </template>
@@ -43,5 +54,15 @@ import SourceCitationCard from '../components/SourceCitationCard.vue'
   color: var(--color-text-muted);
   max-width: 640px;
   margin-bottom: var(--space-5);
+}
+
+.source-explanation {
+  margin: 0 0 var(--space-2);
+}
+
+.source-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
 }
 </style>
