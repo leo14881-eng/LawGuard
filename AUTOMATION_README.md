@@ -1,42 +1,69 @@
 # LawGuard Auto Dev V1（本地自动开发调度系统）
 
-本系统是法护（LawGuard）项目的本地自动化开发调度工具，帮助以"人工监督、单任务、可审计"的方式
-推进 V1 开发。它**不是**产品功能的一部分，不会随前端一起发布，只在本机运行。
+本系统是法护（LawGuard）项目的本地自动化开发调度工具，用于**全自动无人值守**推进 V1
+开发。它**不是**产品功能的一部分，不会随前端一起发布，只在本机运行。
 
 ## 1. 系统用途
 
-每次运行本系统会：
+启动后系统会持续自动循环，每一轮：
 
 1. 检查项目环境与 Git 工作区状态；
-2. 读取 `LAWGUARD_SOT.md`、`CLAUDE.md` 与当前 Git 状态；
+2. 读取 `LAWGUARD_SOT.md`、`CLAUDE.md`、当前 Git 状态与 Auto Dev 进度台账
+   （`docs/project/AUTODEV_PROGRESS.md`，避免重复开发已完成任务）；
 3. 调用 OpenAI（担任法护 CTO 角色）规划**一项**明确、可执行的下一步开发任务；
 4. 非交互调用本地 Claude Code CLI 执行该任务；
 5. 自动执行构建与验证；
 6. 调用 OpenAI 对本次改动进行代码评审；
 7. 仅当评审明确通过、验证全部成功、且配置允许时，才自动提交 Git（默认关闭）；
-8. 生成结构化运行记录与中文摘要报告。
+8. 提交成功后自动更新 `docs/project/AUTODEV_PROGRESS.md` 并单独提交；
+9. 立即开始下一个任务，重复以上流程；
+10. 每一轮都会生成结构化运行记录与中文摘要报告。
 
-**V1 每次运行最多完成一个任务，不会自动连续开发，不会无限循环。**
+**不会等待人工确认**，只有满足以下条件之一才会停止：Planner 判断已无更多可安全规划的
+任务、Claude 执行失败、构建/测试失败、Review 未通过（FAIL 或 BLOCKED）、OpenAI 调用
+失败、已有的超时限制触发，或用户按 `Ctrl+C` 主动中断。`--dry-run`、`--no-commit`、
+`--allow-dirty` 由于本身不会产生提交，效果等同于只执行一个任务后停止，适合单任务预览
+与调试，不会进入连续循环。
 
 ## 2. 架构
 
 ```
 automation/
-├── orchestrator.py     # 主入口，串联整个流程
+├── orchestrator.py     # 主入口，串联整个流程并驱动 Auto Loop / Auto Commit
 ├── config.py            # 读取 .env.local 配置
 ├── models.py             # DevelopmentTask / CommandResult / ReviewResult / RunReport
 ├── security.py           # 命令白名单、路径越界拦截、密钥脱敏
-├── context_loader.py     # 受限项目上下文读取（供 OpenAI 使用）
+├── context_loader.py     # 受限项目上下文读取（供 OpenAI 使用，含进度台账摘要）
+├── progress.py            # Auto Dev 进度台账读写、自动创建与自动修复
 ├── openai_client.py      # OpenAI Responses API 调用（规划器 + 评审器）
 ├── claude_runner.py      # 非交互调用本地 Claude Code CLI
 ├── validator.py          # 自动验证（git diff --check、npm run build 等）
 ├── git_service.py        # 受限 Git 操作（查询 + 安全提交）
 ├── report_writer.py      # 运行记录与中文摘要报告
 ├── prompts/               # 规划器 / 评审器系统 Prompt
-├── runtime/                # 每次运行的详细记录（不纳入 Git）
+├── runtime/                # 每次任务的详细记录（不纳入 Git）
 ├── reports/                 # 中文摘要报告（不纳入 Git）
 └── tests/                    # 单元测试（不发起真实 API 调用）
+
+docs/project/AUTODEV_PROGRESS.md   # Auto Dev 进度台账（纳入 Git，跨进程持久化）
 ```
+
+## Auto Loop / Auto Commit / Progress 管理
+
+- **Auto Loop**：`orchestrator.main()` 在一个 `while True` 循环中反复调用单任务流水线；
+  只有某个任务成功评审并自动提交（状态 `COMMITTED`）时才立即开始下一个任务，其余任何
+  终止状态都会结束循环。
+- **Auto Commit**：评审 PASS 且允许自动提交时，先提交任务本身改动的文件，提交信息统一为
+  `AutoDev(task-NNN): <评审器生成的简短说明>`（`NNN` 为任务序号，自动递增，不使用随机
+  文案）。任何情况下都不会执行 `git push`，所有提交仅保留在本地仓库。
+- **Progress 管理**：任务提交成功后，立即更新并单独提交
+  `docs/project/AUTODEV_PROGRESS.md`（记录 Project Stage / Last Update / Last Commit /
+  Completed Tasks / Current Task / Next Candidate Tasks / Known Issues）。Planner 每轮
+  规划前都会读取该文件，据此避免重复开发 Completed Tasks 中已完成的任务。
+- **启动恢复**：每次启动都会优先读取 `docs/project/AUTODEV_PROGRESS.md`；文件不存在时
+  自动创建默认模板，格式异常（缺少必需章节）时自动重建为默认模板，均不会因此停止运行；
+  任务序号会从已记录的 Completed Tasks 数量之后接续编号，不会在重启后从 `task-001`
+  重新计数。
 
 ## 3. 安全边界
 
@@ -158,16 +185,17 @@ python automation/orchestrator.py --dry-run
 
 会调用 OpenAI 规划任务并展示，但不会调用 Claude Code、不修改任何代码、不提交 Git。
 
-## 8. 正式运行用法
+## 8. 正式运行用法（单任务预览/调试）
 
 ```
 python automation/orchestrator.py --no-commit
 ```
 
 会完整执行规划、Claude 执行、验证、评审，但强制禁止本次自动提交，改动会保留在工作区，
-由你人工检查后自行 `git add` / `git commit`。
+由你人工检查后自行 `git add` / `git commit`。由于不会产生提交，Auto Loop 在此模式下
+只会执行一个任务后停止。
 
-## 9. 自动提交默认关闭
+## 9. 全自动无人值守运行
 
 自动提交默认关闭。启用前必须由你自行在 `.env.local` 中设置：
 
@@ -181,7 +209,10 @@ LAWGUARD_AUTO_COMMIT=true
 python automation/orchestrator.py
 ```
 
-系统仍会在评审未通过、验证失败、工作区不干净（`--allow-dirty` 模式）等情况下拒绝提交。
+系统会持续自动循环执行「规划 → Claude 执行 → 构建/测试 → 评审 → 自动提交 → 更新进度 →
+下一任务」，全程无需人工确认，直到 Planner 判断已无更多可安全规划的任务（此时会输出
+`Planner: DONE` 与 `Auto Dev Finished` 并正常退出）或触发某个停止条件为止。系统仍会在
+评审未通过、验证失败、工作区不干净（`--allow-dirty` 模式）等情况下拒绝提交，并结束循环。
 
 ## 10. 如何查看报告
 
@@ -205,12 +236,23 @@ python automation/orchestrator.py
 
 ## 12. 如何停止
 
-- 运行中可直接 `Ctrl+C` 中断，系统不会在中断瞬间执行提交。
-- 本系统不启动任何后台常驻服务，关闭终端窗口即代表停止运行。
+Auto Loop 只在以下情况停止，除此之外不会等待人工确认：
+
+1. Planner 判断已无更多可安全规划的任务（输出 `Planner: DONE` / `Auto Dev Finished`）；
+2. Claude Code 执行失败；
+3. 构建（`npm run build`）失败；
+4. 任务附加测试命令失败；
+5. Review 结论为 `FAIL`；
+6. Review 结论为 `BLOCKED`；
+7. 调用 OpenAI（Planner 或 Reviewer）失败；
+8. 触发已有的 Claude/OpenAI 超时限制；
+9. 用户按 `Ctrl+C` 主动中断（系统不会在中断瞬间执行提交）。
+
+本系统不启动任何后台常驻服务，关闭终端窗口即代表停止运行。
 
 ## 13. V1 限制
 
-- 每次运行只完成一个任务，不做多任务连续开发，不做无限循环。
+- 启动后持续自动循环开发，直到无更多任务或触发第 12 节列出的停止条件，不做无限重试。
 - 不引入数据库、后端服务、用户登录、任务队列、容器化部署。
 - 不会自动安装前端/Python 依赖，缺少依赖时会明确报告，由你决定是否安装。
 - 不会执行 `git push`，所有提交仍需你自行推送。

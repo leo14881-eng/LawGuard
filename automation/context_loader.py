@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from automation import config as cfg
+from automation import progress as progress_mod
 from automation.git_service import GitService
 from automation.models import CommandResult, DevelopmentTask
 
@@ -116,6 +117,23 @@ def build_file_tree(root: Path) -> str:
     return "\n".join(lines)
 
 
+def read_sot_next_steps() -> list[str]:
+    """读取 LAWGUARD_SOT.md「下一步计划」章节的候选任务列表。
+
+    仅作为 Auto Dev 进度台账（AUTODEV_PROGRESS.md）"Next Candidate Tasks" 的参考
+    展示来源，引用项目已有的人工规划内容，不代表已确认的下一个任务，具体任务仍由
+    Planner 每轮自主决策。
+    """
+    full = _read_text(cfg.SOT_FILE)
+    section = _extract_markdown_sections(full, ("下一步计划",))
+    items = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            items.append(stripped[2:].strip())
+    return items
+
+
 def build_planner_context() -> str:
     """构建供 OpenAI 规划器使用的项目上下文文本。"""
     root = cfg.PROJECT_ROOT
@@ -133,8 +151,12 @@ def build_planner_context() -> str:
     file_tree = build_file_tree(root)
     recent_log = git.get_recent_log(5)
     status = git.get_status_short()
+    progress_state, _, _ = progress_mod.load_or_repair(cfg.PROGRESS_FILE)
+    progress_section = progress_mod.build_planner_context_section(progress_state)
 
     parts = [
+        progress_section,
+        "",
         "## LAWGUARD_SOT.md 摘录（仅规划相关章节：功能范围/页面清单/开发进度/下一步计划；"
         "P-1/P0/P1/P2 等治理原则已在系统提示中以编号引用，此处不重复全文）",
         sot,

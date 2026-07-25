@@ -11,9 +11,10 @@ from pathlib import Path
 
 from automation.security import is_safe_relative_path
 
-# 简短 Conventional Commit 格式：type: 中文描述（首行不超过 80 字符）
+# 简短 Conventional Commit 格式：type: 中文描述（首行不超过 80 字符）。
+# 额外允许 AutoDev(task-NNN): 前缀，供 Auto Dev 全自动循环生成统一格式的提交信息。
 _COMMIT_MESSAGE_PATTERN = re.compile(
-    r"^(feat|fix|docs|style|refactor|perf|test|chore|build|ci)(\([^)]+\))?: .{1,72}$"
+    r"^(feat|fix|docs|style|refactor|perf|test|chore|build|ci|AutoDev)(\([^)]+\))?: .{1,72}$"
 )
 
 

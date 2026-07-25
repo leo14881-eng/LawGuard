@@ -4,7 +4,14 @@
     python automation/orchestrator.py [--dry-run] [--no-commit] [--allow-dirty]
                                        [--model MODEL] [--verbose] [--list-models]
 
-V1 每次运行最多只完成一个任务，禁止无限循环，禁止自动连续开发多个任务。
+Auto Dev 启动后持续自动循环执行「Planner → Claude Code → Build → Test → Review →
+Git Commit → 下一任务」，不等待人工确认，直到满足下方任一停止条件才退出：
+Planner 判断已无更多可安全规划的任务、Claude 执行失败、构建/测试失败、Review 未通过
+（FAIL 或 BLOCKED）、OpenAI 调用失败、已有的超时限制触发，或用户按 Ctrl+C 主动中断。
+每个任务评审通过后立即自动 `git add` + `git commit`（提交信息统一为
+`AutoDev(task-NNN): ...`，任务序号自动递增），仅提交到本地仓库，任何情况下都不会执行
+`git push`。`--dry-run`、`--no-commit`、`--allow-dirty` 仍只用于单任务预览/调试，
+使用这些参数时不会进入连续循环。
 """
 from __future__ import annotations
 
@@ -22,8 +29,10 @@ if __package__ in (None, ""):
     # `python -m automation.orchestrator` 启动都能正确导入。
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from automation import claude_runner, context_loader, openai_client, validator
+from automation import claude_runner, context_loader, openai_client, progress, validator
 from automation.config import (
+    PROGRESS_FILE,
+    PROGRESS_FILE_RELATIVE,
     PROJECT_ROOT,
     REPORTS_DIR,
     RUNTIME_DIR,
@@ -59,8 +68,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         prog="python automation/orchestrator.py",
         description=(
             "LawGuard Auto Dev V1 本地自动开发调度系统。\n"
-            "每次运行由 OpenAI 规划一项开发任务、调用本地 Claude Code CLI 执行、"
-            "自动验证并由 OpenAI 评审，评审通过后才可选地自动提交 Git。"
+            "默认启动后持续自动循环：由 OpenAI 规划一项开发任务、调用本地 Claude Code CLI 执行、"
+            "自动验证并由 OpenAI 评审，评审通过后自动提交 Git 并立即开始下一项任务，直到规划器"
+            "判断无更多任务或触发停止条件为止；--dry-run/--no-commit/--allow-dirty 仍只用于"
+            "单任务预览与调试。"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -156,16 +167,36 @@ def should_auto_commit(
     return safe_to_commit and auto_commit_enabled and not no_commit_flag and not allow_dirty_flag
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
+def build_autodev_commit_message(task_number: int, base_message: str) -> str:
+    """将评审器生成的简短提交说明包装为统一的 Auto Dev 提交信息格式。
 
-    if args.list_models:
-        return handle_list_models(args)
+    统一格式为 `AutoDev(task-NNN): <说明>`，NNN 为本次 Auto Loop 内的任务序号
+    （从 1 开始递增，三位数补零），不使用随机或评审器自拟的提交信息前缀。
+    GitService 要求首行不超过 80 字符，这里做防御性截断，避免因说明文字过长
+    导致本可安全提交的改动被无谓拦截。
+    """
+    prefix = f"AutoDev(task-{task_number:03d}): "
+    stripped = (base_message or "").strip()
+    first_line = stripped.splitlines()[0] if stripped else "自动开发任务已完成"
+    max_len = 80 - len(prefix)
+    if len(first_line) > max_len:
+        first_line = first_line[:max_len]
+    return prefix + first_line
 
+
+def run_task_cycle(args: argparse.Namespace, task_number: int) -> tuple[int, str]:
+    """执行一次完整的单任务流水线：Planner → Claude → Build/Test → Review → Commit。
+
+    返回 (退出码, 最终状态字符串)。main() 中的 Auto Loop 依据 final_status 判断是否
+    立即开始下一个任务：只有状态为 "COMMITTED" 时才会继续循环，其余任何终止状态
+    （规划器无更多任务、Claude 失败、验证失败、评审 FAIL/BLOCKED、配置或安全检查
+    失败等）都会结束 Auto Loop。
+    """
     run_id = _generate_run_id()
     run_dir = RUNTIME_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     logger = setup_run_logger(run_dir, args.verbose)
+    logger.info("===== Task #%d 开始 =====", task_number)
 
     report = RunReport(
         run_id=run_id,
@@ -180,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         error_message=None,
     )
 
-    def finalize(status: str, error_message: str | None, exit_code: int) -> int:
+    def finalize(status: str, error_message: str | None, exit_code: int) -> tuple[int, str]:
         report.finished_at = _now_iso()
         report.final_status = status
         report.error_message = error_message
@@ -191,16 +222,16 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:  # noqa: BLE001 - 报告阶段不因辅助信息失败而中断
             changed_files = []
         summary_path = write_summary_markdown(REPORTS_DIR, report, changed_files)
-        logger.info("运行结束，最终状态：%s", status)
+        logger.info("Task #%d 结束，最终状态：%s", task_number, status)
         logger.info("摘要报告：%s", summary_path)
-        # 运行结束后主动释放日志文件句柄，避免同一进程内重复调用 main()
-        # （例如测试或脚本内嵌调用）时文件句柄被长期占用。
+        # 任务结束后主动释放日志文件句柄，避免 Auto Loop 连续执行多个任务
+        # （或测试中反复调用 run_task_cycle）时文件句柄被长期占用。
         for handler in list(logger.handlers):
             handler.close()
             logger.removeHandler(handler)
-        return exit_code
+        return exit_code, status
 
-    logger.info("===== LawGuard Auto Dev V1 开始运行 =====")
+    logger.info("===== LawGuard Auto Dev V1 —— Task #%d =====", task_number)
     logger.info("运行 ID：%s", run_id)
     logger.info("项目根目录：%s", PROJECT_ROOT)
 
@@ -327,6 +358,7 @@ def main(argv: list[str] | None = None) -> int:
     for r in validation_results:
         status = "超时" if r.timed_out else ("通过" if r.exit_code == 0 else "失败")
         logger.info("验证命令 [%s] cwd=%s：%s", r.command, r.cwd, status)
+    logger.info("Build/Test 验证：%s", "PASS" if validation_passed else "FAIL")
 
     # 第七步：调用 OpenAI 评审器（无论验证是否通过，均收集证据供评审与人工复核）
     logger.info("调用 OpenAI 对本次改动进行代码评审...")
@@ -405,14 +437,89 @@ def main(argv: list[str] | None = None) -> int:
         return finalize("REVIEW_PASSED_NOT_COMMITTED", None, EXIT_SUCCESS)
 
     try:
-        commit_hash = git.commit(changed_files, review.commit_message)
+        commit_message = build_autodev_commit_message(task_number, review.commit_message)
+        logger.info("Auto Commit 中，Commit Message：%s", commit_message)
+        commit_hash = git.commit(changed_files, commit_message)
         report.git_commit = commit_hash
-        logger.info("已自动提交，commit hash：%s", commit_hash)
-        return finalize("COMMITTED", None, EXIT_SUCCESS)
+        logger.info("已自动提交，Commit Hash：%s", commit_hash)
     except GitError as exc:
         msg = f"自动提交失败：{exc}"
         logger.error(msg)
         return finalize("COMMIT_FAILED", msg, EXIT_GENERAL_FAILURE)
+
+    # 第九步：更新 Auto Dev 进度台账（docs/project/AUTODEV_PROGRESS.md）。
+    # 单独提交这一文件（而不是并入上一步的任务提交），保持任务代码提交内容纯粹，
+    # 同时确保提交后工作区恢复干净，供下一任务的工作区检查正常通过。
+    logger.info("Update Progress...")
+    try:
+        next_candidates = context_loader.read_sot_next_steps()
+        progress.record_completed_task(
+            PROGRESS_FILE,
+            task_number=task_number,
+            task_title=task.title,
+            commit_hash=commit_hash,
+            now_iso=_now_iso(),
+            next_candidate_tasks=next_candidates,
+        )
+        progress_commit_message = build_autodev_commit_message(
+            task_number, f"更新 Auto Dev 进度（{task.title}）"
+        )
+        progress_commit_hash = git.commit([PROGRESS_FILE_RELATIVE], progress_commit_message)
+        logger.info("Auto Dev 进度已更新，Commit Hash：%s", progress_commit_hash)
+    except GitError as exc:
+        # 进度台账提交失败不推翻本任务已经成功提交的事实，只记录警告；
+        # 工作区会因此保留未提交的进度文件改动，下一任务启动前的工作区检查
+        # 会据此判断是否能安全继续，Auto Loop 无需为此单独增加处理逻辑。
+        logger.warning("Auto Dev 进度提交失败（任务本身已成功提交）：%s", exc)
+
+    return finalize("COMMITTED", None, EXIT_SUCCESS)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Auto Dev 入口：解析参数后持续循环执行任务，直到无更多任务或触发停止条件。
+
+    循环规则：仅当某个任务的最终状态为 "COMMITTED"（评审通过并已自动提交）时才
+    立即开始下一个任务；其余任何终止状态（Planner 无更多任务、Claude 执行失败、
+    构建/测试失败、Review FAIL/BLOCKED、配置或安全检查失败等）都会结束循环并返回
+    对应退出码。`--dry-run`/`--no-commit`/`--allow-dirty` 由于本身不会产出
+    "COMMITTED" 状态，效果等同于只执行一个任务后停止，用于单任务预览与调试。
+    """
+    args = parse_args(argv)
+
+    if args.list_models:
+        return handle_list_models(args)
+
+    # 启动恢复：优先读取 Auto Dev 进度台账；不存在时自动创建，格式异常时自动修复，
+    # 任何情况下都不会因此停止运行。
+    progress_state, progress_was_missing, progress_was_repaired = progress.load_or_repair(PROGRESS_FILE)
+    if progress_was_missing:
+        print(f"未找到 Auto Dev 进度文件，已自动创建：{PROGRESS_FILE}")
+    elif progress_was_repaired:
+        print(f"Auto Dev 进度文件格式异常，已自动修复为默认模板：{PROGRESS_FILE}")
+    else:
+        print(
+            f"已恢复 Auto Dev 进度：已完成 {len(progress_state.completed_tasks)} 个任务，"
+            f"Last Commit={progress_state.last_commit}"
+        )
+
+    # 任务序号从已完成任务数量之后接续编号，避免每次重启进程都从 task-001 重新
+    # 计数，与其它历史提交的 AutoDev(task-NNN) 编号冲突。
+    task_number = len(progress_state.completed_tasks)
+    while True:
+        task_number += 1
+        print(f"\n===== Task #{task_number} =====")
+        exit_code, final_status = run_task_cycle(args, task_number)
+
+        if final_status == "COMMITTED":
+            print(f"Task #{task_number} Auto Commit 完成，Starting Task #{task_number + 1}...")
+            continue
+
+        if final_status == "BLOCKED_BY_PLANNER":
+            print("Planner: DONE")
+            print("Auto Dev Finished")
+        else:
+            print(f"Auto Dev 已停止（Task #{task_number}，最终状态：{final_status}）。")
+        return exit_code
 
 
 if __name__ == "__main__":

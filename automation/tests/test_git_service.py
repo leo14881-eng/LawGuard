@@ -10,6 +10,10 @@ class TestCommitMessageValidation(unittest.TestCase):
         self.assertTrue(GitService.validate_commit_message("feat: 增加阶段权利详情页"))
         self.assertTrue(GitService.validate_commit_message("fix: 修复移动端导航显示问题"))
 
+    def test_accepts_autodev_prefix(self):
+        self.assertTrue(GitService.validate_commit_message("AutoDev(task-001): 增加阶段权利详情页"))
+        self.assertTrue(GitService.validate_commit_message("AutoDev(task-042): 修复移动端导航显示问题"))
+
     def test_rejects_empty_message(self):
         self.assertFalse(GitService.validate_commit_message(""))
         self.assertFalse(GitService.validate_commit_message("   "))
