@@ -97,8 +97,12 @@ def _normalize_path_string(path_str: str) -> str | None:
     return p.replace("\\", "/")
 
 
-def is_safe_relative_path(path_str: str) -> bool:
-    """校验路径是否为项目内合法相对路径（不越界、非通配、非绝对路径）。"""
+def _is_structurally_safe_relative_path(path_str: str) -> bool:
+    """只检查路径本身格式是否安全：非空、非绝对路径/盘符/UNC、不含目录穿越、非通配符。
+
+    不检查是否命中 FORBIDDEN_PATH_PREFIXES——是否允许命中全局禁止前缀由调用方
+    根据语境决定（见 is_safe_relative_path 与 is_safe_declared_forbidden_path）。
+    """
     p = _normalize_path_string(path_str)
     if p is None:
         return False
@@ -117,6 +121,20 @@ def is_safe_relative_path(path_str: str) -> bool:
         return False
     if ".." in parts:
         return False
+    return True
+
+
+def is_safe_relative_path(path_str: str) -> bool:
+    """校验路径是否为项目内合法相对路径，且不命中全局禁止前缀。
+
+    供 files_allowed（即将被 Claude 写入的文件）与实际 Git 提交文件列表使用，
+    这两处都代表"即将被修改/提交"的路径，必须严格排除 `.env.local`、
+    `LAWGUARD_SOT.md`、`.git` 等受保护路径。
+    """
+    if not _is_structurally_safe_relative_path(path_str):
+        return False
+    p = _normalize_path_string(path_str)
+    parts = [seg for seg in p.split("/") if seg not in ("", ".")]
     normalized = "/".join(parts)
     # Windows 文件系统不区分大小写，禁止路径的比较必须同样忽略大小写，
     # 否则 ".ENV.LOCAL"、"NODE_MODULES" 等大小写变体可绕过禁止列表。
@@ -128,6 +146,18 @@ def is_safe_relative_path(path_str: str) -> bool:
     return True
 
 
+def is_safe_declared_forbidden_path(path_str: str) -> bool:
+    """校验 files_forbidden 中声明的路径本身格式是否合法。
+
+    files_forbidden 表示"本次任务不允许修改"的路径；即使该路径恰好命中全局
+    禁止前缀（如 LAWGUARD_SOT.md、.git、.env.local 等）也不是错误——把一个
+    本就禁止的路径声明为"禁止修改"是合理且安全的冗余声明，不应导致 Planner
+    输出被判定为非法（此前曾因此误伤 Planner 正常声明 LAWGUARD_SOT.md 为
+    files_forbidden 的输出）。这里只做基础路径格式校验，不检查全局禁止前缀。
+    """
+    return _is_structurally_safe_relative_path(path_str)
+
+
 def check_files_lists(files_allowed: list[str], files_forbidden: list[str]) -> list[str]:
     """校验允许/禁止文件列表的合法性与冲突，返回问题列表（空列表表示通过）。"""
     issues: list[str] = []
@@ -137,7 +167,7 @@ def check_files_lists(files_allowed: list[str], files_forbidden: list[str]) -> l
         if not is_safe_relative_path(f):
             issues.append(f"files_allowed 中存在非法路径：{f}")
     for f in files_forbidden or []:
-        if not is_safe_relative_path(f):
+        if not is_safe_declared_forbidden_path(f):
             issues.append(f"files_forbidden 中存在非法路径：{f}")
 
     allowed_set = {_normalize_path_string(f) for f in (files_allowed or [])}

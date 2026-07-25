@@ -5,6 +5,7 @@ import unittest
 from automation.security import (
     check_files_lists,
     is_command_allowed,
+    is_safe_declared_forbidden_path,
     is_safe_relative_path,
     normalize_command,
     redact_secrets,
@@ -74,6 +75,27 @@ class TestPathSafety(unittest.TestCase):
     def test_files_list_forbidden_path_detected(self):
         issues = check_files_lists(["web/src/data/stages.ts"], ["../outside.txt"])
         self.assertTrue(any("非法路径" in i for i in issues))
+
+    def test_files_forbidden_may_declare_globally_protected_paths(self):
+        # 真实运行中 Planner（gpt-5-nano）习惯性地把 LAWGUARD_SOT.md 列入
+        # files_forbidden 作为提示；这是合理、安全的冗余声明，不应被判定为
+        # 非法路径而导致规划失败——只有 files_allowed 才需要严格排除全局
+        # 禁止前缀。
+        issues = check_files_lists(
+            ["web/src/data/stages.ts"],
+            ["LAWGUARD_SOT.md", ".env.local", "automation/runtime"],
+        )
+        self.assertEqual(issues, [])
+
+    def test_is_safe_declared_forbidden_path_allows_protected_prefixes(self):
+        self.assertTrue(is_safe_declared_forbidden_path("LAWGUARD_SOT.md"))
+        self.assertTrue(is_safe_declared_forbidden_path(".env.local"))
+        self.assertTrue(is_safe_declared_forbidden_path("automation/runtime/x.json"))
+
+    def test_is_safe_declared_forbidden_path_still_rejects_traversal(self):
+        self.assertFalse(is_safe_declared_forbidden_path("../outside.txt"))
+        self.assertFalse(is_safe_declared_forbidden_path("*"))
+        self.assertFalse(is_safe_declared_forbidden_path("D:/SOFT/LawGuard/web"))
 
 
 class TestCommandSafety(unittest.TestCase):
