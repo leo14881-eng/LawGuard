@@ -1,0 +1,196 @@
+"""项目上下文读取模块：为 OpenAI 规划器与评审器准备受限、可控大小的项目上下文。
+
+只读取项目根目录内的信息，不递归读取全部源码全文，
+并对发送给 OpenAI 的内容设置长度上限，超出时截断并明确标记。
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+from automation import config as cfg
+from automation.git_service import GitService
+from automation.models import CommandResult, DevelopmentTask
+
+# 生成文件树时忽略的目录名
+_IGNORE_DIR_NAMES = {
+    ".git", "node_modules", "dist", ".idea", ".vscode",
+    "__pycache__", ".venv",
+}
+# 生成文件树时忽略的相对路径（自动化系统自身的运行产物）
+_IGNORE_RELATIVE_DIRS = {"automation/runtime", "automation/reports"}
+
+_MAX_TREE_FILES = 400
+_MAX_TREE_DEPTH = 6
+_MAX_FIELD_CHARS = 6000
+_MAX_TOTAL_CHARS = 20000
+
+
+def _truncate(text: str, limit: int) -> str:
+    if text is None:
+        return ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n...[内容过长，已截断，原始长度 {len(text)} 字符]"
+
+
+def _read_text(path: Path, limit: int = _MAX_FIELD_CHARS) -> str:
+    if not path.exists():
+        return "（文件不存在）"
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return f"（读取失败：{exc}）"
+    return _truncate(text, limit)
+
+
+def _should_ignore(rel_path: Path) -> bool:
+    rel_str = rel_path.as_posix()
+    if rel_str in _IGNORE_RELATIVE_DIRS:
+        return True
+    return any(part in _IGNORE_DIR_NAMES for part in rel_path.parts)
+
+
+def build_file_tree(root: Path) -> str:
+    """生成受限的项目文件树文本，限制最大文件数与最大深度。"""
+    lines: list[str] = []
+    state = {"file_count": 0, "truncated": False}
+
+    def walk(dir_path: Path, depth: int) -> None:
+        if state["truncated"] or depth > _MAX_TREE_DEPTH:
+            return
+        try:
+            entries = sorted(dir_path.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+        except OSError:
+            return
+        for entry in entries:
+            if state["truncated"]:
+                return
+            rel = entry.relative_to(root)
+            if _should_ignore(rel):
+                continue
+            indent = "  " * depth
+            if entry.is_dir():
+                lines.append(f"{indent}{entry.name}/")
+                walk(entry, depth + 1)
+            else:
+                if state["file_count"] >= _MAX_TREE_FILES:
+                    lines.append(f"{indent}...[文件数已达上限 {_MAX_TREE_FILES}，已截断]")
+                    state["truncated"] = True
+                    return
+                lines.append(f"{indent}{entry.name}")
+                state["file_count"] += 1
+
+    walk(root, 0)
+    return "\n".join(lines)
+
+
+def build_planner_context() -> str:
+    """构建供 OpenAI 规划器使用的项目上下文文本。"""
+    root = cfg.PROJECT_ROOT
+    git = GitService(root)
+
+    sot = _read_text(cfg.SOT_FILE)
+    claude_md = _read_text(cfg.CLAUDE_MD_FILE)
+    package_json = _read_text(cfg.WEB_DIR / "package.json", 2000)
+    file_tree = build_file_tree(root)
+    recent_log = git.get_recent_log(5)
+    status = git.get_status_short()
+
+    parts = [
+        "## LAWGUARD_SOT.md（项目唯一事实源）",
+        sot,
+        "",
+        "## CLAUDE.md（开发规则）",
+        claude_md,
+        "",
+        "## web/package.json",
+        package_json,
+        "",
+        "## 项目文件树（已忽略 node_modules/dist/.git 等目录，数量与深度均有上限）",
+        file_tree,
+        "",
+        "## 最近 5 条 Git 提交",
+        recent_log or "（无提交记录）",
+        "",
+        "## 当前 Git 状态（git status --short）",
+        status or "（工作区干净）",
+        "",
+        "## 自动化系统边界提醒",
+        (
+            "本次任务将由 Claude Code 在本地非交互执行，只能修改 files_allowed 中列出的文件，"
+            "不得修改 LAWGUARD_SOT.md（除非任务明确要求且必要），不得引入后端/数据库/登录/"
+            "在线咨询/AI 聊天等 V1 明确禁止的能力。"
+        ),
+    ]
+    context_text = "\n".join(parts)
+    return _truncate(context_text, _MAX_TOTAL_CHARS)
+
+
+def build_reviewer_context(
+    *,
+    task: DevelopmentTask,
+    claude_result: CommandResult,
+    validation_results: list[CommandResult],
+) -> str:
+    """构建供 OpenAI 评审器使用的评审上下文文本。"""
+    root = cfg.PROJECT_ROOT
+    git = GitService(root)
+
+    diff_stat = _truncate(git.get_diff_stat(), 2000)
+    diff = _truncate(git.get_diff(), 12000)
+    status = _truncate(git.get_status_short(), 2000)
+    file_tree = build_file_tree(root)
+
+    validation_text_lines = []
+    for r in validation_results:
+        status_text = "超时" if r.timed_out else ("通过" if r.exit_code == 0 else "失败")
+        validation_text_lines.append(
+            f"- 命令：{r.command}\n  工作目录：{r.cwd}\n  结果：{status_text}（退出码 {r.exit_code}，"
+            f"耗时 {r.duration_seconds:.1f} 秒）\n  stderr 摘要：{_truncate(r.stderr, 500)}"
+        )
+    validation_text = "\n".join(validation_text_lines) or "（无验证记录）"
+
+    claude_summary = (
+        f"退出码：{claude_result.exit_code}；是否超时：{claude_result.timed_out}；"
+        f"耗时：{claude_result.duration_seconds:.1f} 秒\n"
+        f"stdout 摘要：{_truncate(claude_result.stdout, 3000)}\n"
+        f"stderr 摘要：{_truncate(claude_result.stderr, 1000)}"
+    )
+
+    task_json_lines = [
+        f"task_id: {task.task_id}",
+        f"title: {task.title}",
+        f"objective: {task.objective}",
+        f"scope: {task.scope}",
+        f"acceptance_criteria: {task.acceptance_criteria}",
+        f"files_allowed: {task.files_allowed}",
+        f"files_forbidden: {task.files_forbidden}",
+        f"validation_commands: {task.validation_commands}",
+        f"risk_level: {task.risk_level}",
+        f"requires_sot_update: {task.requires_sot_update}",
+    ]
+
+    parts = [
+        "## 原始任务",
+        "\n".join(task_json_lines),
+        "",
+        "## Claude Code 执行结果",
+        claude_summary,
+        "",
+        "## Git diff --stat",
+        diff_stat or "（无改动）",
+        "",
+        "## Git diff",
+        diff or "（无改动）",
+        "",
+        "## Git status --short",
+        status or "（工作区干净）",
+        "",
+        "## 自动验证结果",
+        validation_text,
+        "",
+        "## 当前项目结构（受限文件树）",
+        file_tree,
+    ]
+    context_text = "\n".join(parts)
+    return _truncate(context_text, _MAX_TOTAL_CHARS)

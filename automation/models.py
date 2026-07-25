@@ -1,0 +1,102 @@
+"""数据模型定义：贯穿整个自动化流程的核心数据结构。"""
+from __future__ import annotations
+
+import dataclasses
+import json
+from dataclasses import dataclass
+from typing import Any
+
+# 任务风险等级允许的取值；BLOCKED 表示规划器判断当前无法安全生成任务
+RISK_LEVELS = {"LOW", "MEDIUM", "HIGH", "BLOCKED"}
+# 评审结论允许的取值
+REVIEW_VERDICTS = {"PASS", "FAIL", "BLOCKED"}
+
+
+@dataclass
+class DevelopmentTask:
+    """OpenAI 规划器（CTO 角色）生成的下一项开发任务。"""
+
+    task_id: str
+    title: str
+    objective: str
+    rationale: str
+    scope: str
+    acceptance_criteria: list[str]
+    files_allowed: list[str]
+    files_forbidden: list[str]
+    validation_commands: list[str]
+    risk_level: str
+    requires_sot_update: bool
+    developer_prompt: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+@dataclass
+class CommandResult:
+    """一次命令执行的结果记录。"""
+
+    command: str
+    cwd: str
+    exit_code: int
+    stdout: str
+    stderr: str
+    duration_seconds: float
+    timed_out: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+@dataclass
+class ReviewResult:
+    """OpenAI 评审器的评审结论。"""
+
+    verdict: str
+    summary: str
+    blocking_issues: list[str]
+    non_blocking_suggestions: list[str]
+    evidence: list[str]
+    safe_to_commit: bool
+    commit_message: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+@dataclass
+class RunReport:
+    """一次运行的完整报告。"""
+
+    run_id: str
+    started_at: str
+    finished_at: str | None
+    task: DevelopmentTask | None
+    claude_result: CommandResult | None
+    validation_results: list[CommandResult]
+    review: ReviewResult | None
+    git_commit: str | None
+    final_status: str
+    error_message: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "task": self.task.to_dict() if self.task else None,
+            "claude_result": self.claude_result.to_dict() if self.claude_result else None,
+            "validation_results": [r.to_dict() for r in self.validation_results],
+            "review": self.review.to_dict() if self.review else None,
+            "git_commit": self.git_commit,
+            "final_status": self.final_status,
+            "error_message": self.error_message,
+        }
+
+    def to_safe_json(self) -> str:
+        """生成脱敏后的 JSON 字符串，用于写入报告文件。"""
+        from automation.security import redact_secrets
+
+        raw = json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+        return redact_secrets(raw)

@@ -1,0 +1,201 @@
+"""openai_client.py 单元测试：不发起真实网络请求，客户端全部使用 unittest.mock 模拟。"""
+import json
+import unittest
+from unittest import mock
+
+from automation.config import Config
+from automation.openai_client import (
+    PlannerError,
+    ReviewerError,
+    plan_next_task,
+    review_change,
+    strip_code_fence,
+    validate_review_payload,
+    validate_task_payload,
+)
+
+VALID_TASK = {
+    "task_id": "T-001",
+    "title": "示例任务",
+    "objective": "示例目标",
+    "rationale": "示例理由",
+    "scope": "示例范围",
+    "acceptance_criteria": ["构建通过"],
+    "files_allowed": ["web/src/data/stages.ts"],
+    "files_forbidden": ["LAWGUARD_SOT.md"],
+    "validation_commands": ["npm run build"],
+    "risk_level": "LOW",
+    "requires_sot_update": False,
+    "developer_prompt": "示例开发说明",
+}
+
+VALID_REVIEW = {
+    "verdict": "PASS",
+    "summary": "评审通过",
+    "blocking_issues": [],
+    "non_blocking_suggestions": [],
+    "evidence": ["npm run build 通过"],
+    "safe_to_commit": True,
+    "commit_message": "feat: 示例改动",
+}
+
+
+class TestStripCodeFence(unittest.TestCase):
+    def test_strips_json_fence(self):
+        raw = '```json\n{"a": 1}\n```'
+        self.assertEqual(strip_code_fence(raw), '{"a": 1}')
+
+    def test_strips_plain_fence(self):
+        raw = '```\n{"a": 1}\n```'
+        self.assertEqual(strip_code_fence(raw), '{"a": 1}')
+
+    def test_no_fence_untouched(self):
+        raw = '{"a": 1}'
+        self.assertEqual(strip_code_fence(raw), '{"a": 1}')
+
+
+class TestValidateTaskPayload(unittest.TestCase):
+    def test_valid_task_passes(self):
+        self.assertEqual(validate_task_payload(VALID_TASK), [])
+
+    def test_missing_field_detected(self):
+        data = dict(VALID_TASK)
+        del data["title"]
+        issues = validate_task_payload(data)
+        self.assertTrue(any("title" in i for i in issues))
+
+    def test_invalid_risk_level_detected(self):
+        data = dict(VALID_TASK)
+        data["risk_level"] = "SUPER_HIGH"
+        issues = validate_task_payload(data)
+        self.assertTrue(any("risk_level" in i for i in issues))
+
+    def test_blocked_task_skips_file_checks(self):
+        data = dict(VALID_TASK)
+        data["risk_level"] = "BLOCKED"
+        data["files_allowed"] = []
+        data["files_forbidden"] = []
+        data["validation_commands"] = []
+        self.assertEqual(validate_task_payload(data), [])
+
+    def test_disallowed_command_detected(self):
+        data = dict(VALID_TASK)
+        data["validation_commands"] = ["git push origin main"]
+        issues = validate_task_payload(data)
+        self.assertTrue(any("validation_commands" in i for i in issues))
+
+    def test_files_allowed_forbidden_conflict_detected(self):
+        data = dict(VALID_TASK)
+        data["files_allowed"] = ["web/src/data/stages.ts"]
+        data["files_forbidden"] = ["web/src/data/stages.ts"]
+        issues = validate_task_payload(data)
+        self.assertTrue(any("冲突" in i for i in issues))
+
+
+class TestValidateReviewPayload(unittest.TestCase):
+    def test_valid_review_passes(self):
+        self.assertEqual(validate_review_payload(VALID_REVIEW), [])
+
+    def test_invalid_verdict_detected(self):
+        data = dict(VALID_REVIEW)
+        data["verdict"] = "MAYBE"
+        issues = validate_review_payload(data)
+        self.assertTrue(any("verdict" in i for i in issues))
+
+    def test_fail_verdict_cannot_be_safe_to_commit(self):
+        data = dict(VALID_REVIEW)
+        data["verdict"] = "FAIL"
+        data["safe_to_commit"] = True
+        issues = validate_review_payload(data)
+        self.assertTrue(any("safe_to_commit" in i for i in issues))
+
+    def test_pass_without_commit_message_detected(self):
+        data = dict(VALID_REVIEW)
+        data["commit_message"] = ""
+        issues = validate_review_payload(data)
+        self.assertTrue(any("commit_message" in i for i in issues))
+
+
+def _fake_config() -> Config:
+    return Config(
+        openai_api_key="sk-test-not-real",
+        openai_model="gpt-test",
+        auto_commit=False,
+        claude_timeout_seconds=10,
+        openai_timeout_seconds=10,
+    )
+
+
+def _fake_response(text: str):
+    response = mock.Mock()
+    response.output_text = text
+    return response
+
+
+class TestPlanNextTaskRetry(unittest.TestCase):
+    """全部使用 mock.Mock 客户端，不发起任何真实 OpenAI 网络请求。"""
+
+    def test_retries_once_on_invalid_json_then_succeeds(self):
+        client = mock.Mock()
+        client.responses.create.side_effect = [
+            _fake_response("这不是合法 JSON"),
+            _fake_response(json.dumps(VALID_TASK, ensure_ascii=False)),
+        ]
+        task = plan_next_task(client, _fake_config(), "上下文")
+        self.assertEqual(task.task_id, "T-001")
+        self.assertEqual(client.responses.create.call_count, 2)
+
+    def test_raises_after_two_invalid_attempts(self):
+        client = mock.Mock()
+        client.responses.create.side_effect = [
+            _fake_response("不合法"),
+            _fake_response("依然不合法"),
+        ]
+        with self.assertRaises(PlannerError):
+            plan_next_task(client, _fake_config(), "上下文")
+        self.assertEqual(client.responses.create.call_count, 2)
+
+    def test_accepts_blocked_task_without_reliable_legal_source(self):
+        client = mock.Mock()
+        blocked_task = dict(VALID_TASK)
+        blocked_task.update(
+            risk_level="BLOCKED",
+            files_allowed=[],
+            files_forbidden=[],
+            validation_commands=[],
+            rationale="需要新增法律条文，但项目内没有可核验的官方来源",
+        )
+        client.responses.create.return_value = _fake_response(
+            json.dumps(blocked_task, ensure_ascii=False)
+        )
+        task = plan_next_task(client, _fake_config(), "上下文")
+        self.assertEqual(task.risk_level, "BLOCKED")
+        self.assertEqual(client.responses.create.call_count, 1)
+
+
+class TestReviewChange(unittest.TestCase):
+    def test_accepts_fail_verdict_for_missing_legal_source(self):
+        client = mock.Mock()
+        fail_review = dict(VALID_REVIEW)
+        fail_review.update(
+            verdict="FAIL",
+            safe_to_commit=False,
+            commit_message="",
+            blocking_issues=["新增法律条文缺少可核验来源"],
+        )
+        client.responses.create.return_value = _fake_response(
+            json.dumps(fail_review, ensure_ascii=False)
+        )
+        review = review_change(client, _fake_config(), "评审上下文")
+        self.assertEqual(review.verdict, "FAIL")
+        self.assertFalse(review.safe_to_commit)
+
+    def test_rejects_incomplete_schema(self):
+        client = mock.Mock()
+        client.responses.create.return_value = _fake_response('{"verdict": "PASS"}')
+        with self.assertRaises(ReviewerError):
+            review_change(client, _fake_config(), "评审上下文")
+
+
+if __name__ == "__main__":
+    unittest.main()
