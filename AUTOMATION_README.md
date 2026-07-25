@@ -47,6 +47,11 @@ automation/
 - 禁止执行 `git push`、`git reset --hard`、`git clean`、`git checkout .`、`git restore .`、
   自动 `git commit`（由系统受控提交除外）等破坏性操作。
 - Claude Code 以 `subprocess` 非交互方式调用，工作目录固定为项目根目录，设有超时保护。
+- 调用时附带 `--permission-mode acceptEdits`：仅自动放行文件编辑类工具（Edit /
+  Write / NotebookEdit），使非交互模式下的代码改动无需人工逐次点击"允许"；
+  Bash 等其他工具仍走正常权限流程，非交互模式下同样会被拒绝而非被绕过，因此
+  不会放宽 git commit / push / 任意 Shell 命令的限制。未额外传入 `--add-dir`，
+  写入范围仍被 Claude Code 自身限制在项目根目录内，不会扩大到项目目录之外。
 - 自动提交前必须同时满足：Claude 执行成功、自动验证成功、OpenAI 评审明确返回 `PASS` 且
   `safe_to_commit=true`、`.env.local` 中 `LAWGUARD_AUTO_COMMIT=true`、未使用 `--no-commit` /
   `--allow-dirty`。
@@ -196,6 +201,7 @@ python automation/orchestrator.py
 | 提示 Git 工作区不干净 | 存在未提交的改动 | 先自行提交/暂存，或使用 `--allow-dirty`（仍不会自动提交） |
 | 验证阶段 `npm run build` 失败 | 前端代码本身有类型错误或构建错误 | 查看 `automation/runtime/<run_id>/validation.json` 定位具体错误 |
 | OpenAI 报错模型不可用 | `OPENAI_MODEL` 配置了当前账号不可用的模型 | 更换为可用模型，程序不会自动降级或静默切换 |
+| Claude 执行摘要提示"需要您批准写入权限"、`claude_stdout.txt` 无实际改动 | 本地 Claude Code CLI 版本过旧，不支持 `--permission-mode` 参数，非交互模式下文件写入请求无法自动放行 | 升级本地 Claude Code CLI 到支持 `--permission-mode acceptEdits` 的版本后重试 |
 
 ## 12. 如何停止
 

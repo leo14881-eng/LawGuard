@@ -95,7 +95,7 @@ def run_claude(
     超时或找不到可执行文件时同样返回 CommandResult，由调用方判断是否终止流程。
     """
     executable = locate_claude_executable()
-    command_label = f"claude -p <task_prompt, {len(prompt)} 字符>"
+    command_label = f"claude -p <task_prompt, {len(prompt)} 字符> --permission-mode acceptEdits"
 
     if executable is None:
         return CommandResult(
@@ -108,7 +108,18 @@ def run_claude(
             timed_out=False,
         )
 
-    args = [executable, "-p", prompt]
+    # 非交互模式（-p）下，Claude Code 默认权限模式（default）会像交互式会话一样
+    # 为每次文件写入弹出确认提示；但非交互模式没有终端可供确认，请求会被直接
+    # 拒绝，Claude 只能在回复文本里说明"需要您批准写入权限"，无法真正落盘。
+    # 这正是编排器此前表现为"只读"、每次都要人工手动授权的根本原因。
+    #
+    # 这里改用 --permission-mode acceptEdits：只自动放行文件编辑类工具
+    # （Edit / Write / NotebookEdit），其余工具（如 Bash）仍走正常权限流程，
+    # 在非交互模式下同样会被拒绝而不是被绕过，因此不会放宽对 git commit /
+    # git push / 任意 Shell 命令的限制。写入范围仍被 Claude Code 自身限制在
+    # 当前工作目录（cwd=project_root）内，这里没有传入 --add-dir，因此不会
+    # 扩大到项目目录之外。
+    args = [executable, "-p", prompt, "--permission-mode", "acceptEdits"]
     started = time.monotonic()
     try:
         completed = subprocess.run(
