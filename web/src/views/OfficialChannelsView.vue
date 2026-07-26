@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import ChannelCard from '../components/ChannelCard.vue'
 import NoticeBanner from '../components/NoticeBanner.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -7,6 +8,35 @@ import SourceCitationCard from '../components/SourceCitationCard.vue'
 import TrustBanner from '../components/TrustBanner.vue'
 import SharePanel from '../components/SharePanel.vue'
 import type { StatusKind } from '../components/StatusBadge.vue'
+import { officialChannelsByProvince } from '../data/official_channels'
+
+/** 省份筛选控件的选中值，'all' 表示全国 / 未筛选 */
+const selectedProvince = ref<string>('all')
+
+/** 筛选控件选项：固定的"全国（未筛选）"项 + 各省级行政区 */
+const provinceOptions = computed(() => [
+  { code: 'all', province: '全国（未筛选）' },
+  ...officialChannelsByProvince.map(({ code, province }) => ({ code, province })),
+])
+
+/**
+ * 按 province 字段分组的省级渠道列表。骨架阶段每省仅一条占位记录，
+ * 保留分组结构是为了未来同一省份存在多条已核验记录时无需改动模板。
+ */
+const provinceGroups = computed(() => {
+  const source =
+    selectedProvince.value === 'all'
+      ? officialChannelsByProvince
+      : officialChannelsByProvince.filter((entry) => entry.code === selectedProvince.value)
+
+  const groups = new Map<string, typeof officialChannelsByProvince>()
+  for (const entry of source) {
+    const list = groups.get(entry.province) ?? []
+    list.push(entry)
+    groups.set(entry.province, list)
+  }
+  return Array.from(groups.entries()).map(([province, entries]) => ({ province, entries }))
+})
 
 /**
  * 官方渠道来源记录条目。
@@ -84,6 +114,62 @@ const channelSources: ChannelSourceRecord[] = [
         <p>官方渠道适用于反映诉求、寻求法律咨询或程序性帮助，不能替代执业律师提供的个案法律意见。</p>
       </section>
 
+      <section aria-labelledby="province-query-heading">
+        <h2 id="province-query-heading">按省份查询（骨架，待官方数据接入）</h2>
+        <p class="lead" id="province-query-desc">
+          各省具体机构名称与联系方式尚未取得可核验的官方来源，以下仅提供省份筛选入口与
+          统一占位条目，紧急情况请优先拨打上方 12348 或 12309 全国性热线。
+        </p>
+
+        <NoticeBanner tone="info" title="省级数据核验说明">
+          <p>省级条目均标注"待官方链接核验"，具体机构名称与电话完成人工核验后才会更新为正式内容。</p>
+        </NoticeBanner>
+
+        <div class="province-filter">
+          <label class="province-filter__label" for="province-filter-select">
+            按省份筛选官方求助渠道
+          </label>
+          <select
+            id="province-filter-select"
+            v-model="selectedProvince"
+            class="province-filter__select"
+            aria-describedby="province-query-desc"
+          >
+            <option v-for="option in provinceOptions" :key="option.code" :value="option.code">
+              {{ option.province }}
+            </option>
+          </select>
+        </div>
+
+        <div
+          class="province-groups"
+          role="list"
+          :aria-label="
+            selectedProvince === 'all'
+              ? '全部省级行政区官方求助渠道占位列表'
+              : `${provinceGroups[0]?.province ?? ''}官方求助渠道占位列表`
+          "
+        >
+          <div
+            v-for="group in provinceGroups"
+            :key="group.province"
+            class="province-group"
+            role="listitem"
+          >
+            <h3 class="province-group__title">{{ group.province }}</h3>
+            <div class="grid grid-2 channels-grid">
+              <ChannelCard
+                v-for="entry in group.entries"
+                :key="entry.code"
+                :name="`${entry.province} · ${entry.name}`"
+                :description="entry.contact"
+                :verified="entry.verificationStatus === 'verified'"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section aria-labelledby="channel-source-heading">
         <h2 id="channel-source-heading">来源与版本记录</h2>
         <p class="lead" id="channel-source-desc">
@@ -113,6 +199,47 @@ const channelSources: ChannelSourceRecord[] = [
 </template>
 
 <style scoped>
+.province-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 var(--space-5);
+  max-width: 320px;
+}
+
+.province-filter__label {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.province-filter__select {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+}
+
+.province-filter__select:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.province-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.province-group__title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-body);
+  color: var(--color-primary-dark);
+}
+
 .channel-source-list {
   margin-top: var(--space-4);
 }
