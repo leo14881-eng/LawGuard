@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue'
+import PrintPageButton from '../components/PrintPageButton.vue'
 </script>
 
 <template>
   <div class="container section">
-    <PageHeader title="隐私说明" />
+    <PageHeader title="隐私说明">
+      <template #actions>
+        <PrintPageButton page-title="隐私说明 - 法护 LawGuard" />
+      </template>
+    </PageHeader>
 
     <div class="prose">
       <section>
