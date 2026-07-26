@@ -4,10 +4,10 @@
 LawGuard V1 —— Auto Dev 全自动开发循环
 
 ## Last Update
-2026-07-26T14:41:25
+2026-07-26T14:58:28
 
 ## Last Commit
-AutoDev(task-016): feat: OfficialChannels 省级查询骨架与本地数据实现
+AutoDev(task-017): feat: 新增本地全文搜索入口、数据源 searchItems、路由 /search
 
 ## Completed Tasks
 - task-001: 在法律来源页面完善官方来源展示顺序与无障碍性，显示版本记录信息并复用现有组件与设计令牌
@@ -26,6 +26,7 @@ AutoDev(task-016): feat: OfficialChannels 省级查询骨架与本地数据实�
 - task-014: 在首页新增交互式个人处境导航工具
 - task-015: 首页新增交互式个人处境导航工具入口与页面骨架
 - task-016: 官方求助渠道省级查询入口骨架
+- task-017: 建立本地全文搜索入口与结果列表（BL-003-1）
 
 ## Current Task
 （无，等待 Planner 规划下一任务）
