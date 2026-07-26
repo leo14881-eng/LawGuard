@@ -59,7 +59,7 @@ const items: QuickNavItem[] = [
         :key="item.to"
         :to="item.to"
         class="quick-nav__item card card--interactive"
-        :aria-label="item.title"
+        :aria-label="`${item.title}：${item.description}（${item.actionLabel}）`"
       >
         <h3 class="quick-nav__title">{{ item.title }}</h3>
         <p class="quick-nav__desc">{{ item.description }}</p>

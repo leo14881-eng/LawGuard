@@ -71,7 +71,7 @@ const trustPoints = [
 
     <HeroSection />
 
-    <section class="section">
+    <section class="section" aria-labelledby="quick-nav-heading">
       <div class="container">
         <h2 id="quick-nav-heading">现在，你可能需要做这些事</h2>
         <QuickNavCard heading-id="quick-nav-heading" />
