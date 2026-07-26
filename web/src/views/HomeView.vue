@@ -7,6 +7,7 @@ import NoticeBanner from '../components/NoticeBanner.vue'
 import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import TrustBanner from '../components/TrustBanner.vue'
 import SharePanel from '../components/SharePanel.vue'
+import PrintPageButton from '../components/PrintPageButton.vue'
 import { stages } from '../data/stages'
 import { useJsonLd } from '../composables/useJsonLd'
 import { getSiteUrl } from '../utils/seo'
@@ -65,6 +66,10 @@ const trustPoints = [
 
 <template>
   <div>
+    <div class="container home-print-slot no-print">
+      <PrintPageButton page-title="法护 LawGuard - 刑事案件公益应急导航" />
+    </div>
+
     <div class="container trust-banner-slot">
       <TrustBanner variant="full" />
     </div>
@@ -166,6 +171,12 @@ const trustPoints = [
 </template>
 
 <style scoped>
+.home-print-slot {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--space-4);
+}
+
 .trust-banner-slot {
   padding-top: var(--space-4);
 }
