@@ -103,6 +103,10 @@ class RunReport:
     final_status: str
     error_message: str | None
     token_usages: list[TokenUsage] = dataclasses.field(default_factory=list)
+    # Review Retry 记录：LOW Risk 任务在 Review FAIL 后自动重试的每一轮记录
+    # （attempt_number/claude 修复耗时/验证是否通过/评审结论/阻塞问题等），
+    # 第 1 轮（初次执行，非重试）也会记录在内，便于报告完整还原全过程。
+    review_attempts: list[dict[str, Any]] = dataclasses.field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -117,6 +121,7 @@ class RunReport:
             "final_status": self.final_status,
             "error_message": self.error_message,
             "token_usages": [u.to_dict() for u in self.token_usages],
+            "review_attempts": self.review_attempts,
         }
 
     def to_safe_json(self) -> str:

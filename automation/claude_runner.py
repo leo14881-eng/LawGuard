@@ -84,6 +84,62 @@ def build_task_prompt(
 """
 
 
+def build_fix_prompt(
+    *,
+    task_title: str,
+    scope: str,
+    files_allowed: list[str],
+    files_forbidden: list[str],
+    review_summary: str,
+    blocking_issues: list[str],
+    non_blocking_suggestions: list[str],
+) -> str:
+    """构建 Review Retry 阶段下发给 Claude Code 的"仅修复评审问题"Prompt（全部使用中文）。
+
+    只用于 LOW Risk 任务在 Review FAIL 后的自动重试：严格限定为"只修复评审指出的问题"，
+    不重新规划任务、不改变任务目标、不新增功能、不扩大修改范围，交由流水线重新验证。
+    """
+    allowed_text = "\n".join(f"- {f}" for f in files_allowed) or "（无）"
+    forbidden_text = "\n".join(f"- {f}" for f in files_forbidden) or "（无）"
+    blocking_text = "\n".join(f"- {i}" for i in blocking_issues) or "（无）"
+    suggestions_text = "\n".join(f"- {s}" for s in non_blocking_suggestions) or "（无）"
+
+    return f"""你正在为"法护（LawGuard）"项目的自动化开发任务执行一次 Review Retry 修复。
+
+【原任务标题】
+{task_title}
+
+【原任务范围（不得扩大或改变）】
+{scope}
+
+【本次 Code Review 未通过】
+评审摘要：{review_summary}
+
+Blocking Issues：
+{blocking_text}
+
+非阻塞建议（可参考，不强制）：
+{suggestions_text}
+
+【允许修改的文件（与原任务一致，不得扩大）】
+{allowed_text}
+
+【禁止修改的文件】
+{forbidden_text}
+
+【强制要求，必须严格遵守】
+1. 只修复上方 Blocking Issues 指出的问题，不得修改无关代码。
+2. 不得重新规划任务，不得改变原任务目标与范围。
+3. 不得新增额外功能，不得修改产品设计。
+4. 不得修改法律内容（如涉及法律内容问题，直接在执行摘要中报告 BLOCKED，不得自行编造或推断）。
+5. 严格只修改"允许修改的文件"范围内的内容，绝不触碰"禁止修改的文件"。
+6. 不得访问或修改本项目目录之外的任何文件、目录。
+7. 修复完成后立即结束，由流水线自动重新执行构建/测试与评审，不需要你自行判断是否通过。
+8. 最后用简体中文简短说明本次修复了什么，不要展开无关分析。
+9. 不要执行 git commit，不要执行 git push。
+"""
+
+
 def run_claude(
     prompt: str,
     *,

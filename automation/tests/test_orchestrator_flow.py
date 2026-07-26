@@ -212,6 +212,118 @@ class TestValidationFailureBlocksCommit(_OrchestratorTestBase):
         self.mock_git.commit.assert_not_called()
 
 
+class TestReviewRetryLowRisk(_OrchestratorTestBase):
+    """Review Retry 回归测试：模拟真实 Task #4（QuickNavCard aria-label，LOW Risk）曾经出现的
+    "Review FAIL → 自动 Retry → 重新 Build → 重新 Review → PASS → Commit → 自动进入下一任务"
+    完整链路，验证全程无需人工介入。"""
+
+    def setUp(self):
+        super().setUp()
+        self.mock_git.get_changed_files.return_value = [
+            "web/src/components/QuickNavCard.vue",
+            "docs/project/AUTODEV_PROGRESS.md",
+        ]
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_low_risk_fail_then_pass_retries_and_commits(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        # 第 1 轮 Review FAIL（对应真实 Task #4：aria-label 未严格等于卡片标题），
+        # 第 2 轮（Retry Attempt 2）修复后 Review PASS；随后 Planner 返回 DONE 结束循环。
+        mock_plan.side_effect = [
+            _fake_plan_result(risk_level="LOW"),
+            _fake_plan_result(risk_level="DONE"),
+        ]
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.side_effect = [
+            _fake_review_result(verdict="FAIL", safe_to_commit=False),
+            _fake_review_result(verdict="PASS", safe_to_commit=True),
+        ]
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        # 自动 Retry 一次：Claude 被调用两次（初次执行 + 1 次修复），评审被调用两次。
+        self.assertEqual(mock_run_claude.call_count, 2)
+        self.assertEqual(mock_review.call_count, 2)
+        # 最终 Review PASS 后正常提交，且只产生一次 Commit（不会为 Retry 额外提交）。
+        self.mock_git.commit.assert_called_once()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_medium_risk_fail_stops_immediately_without_retry(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        mock_plan.return_value = _fake_plan_result(risk_level="MEDIUM")
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.return_value = _fake_review_result(verdict="FAIL", safe_to_commit=False)
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_REVIEW_FAILED)
+        self.assertEqual(mock_run_claude.call_count, 1)
+        self.assertEqual(mock_review.call_count, 1)
+        self.mock_git.commit.assert_not_called()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_low_risk_exhausts_three_attempts_then_stops(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.return_value = _fake_review_result(verdict="FAIL", safe_to_commit=False)
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_REVIEW_FAILED)
+        self.assertEqual(mock_run_claude.call_count, orchestrator.MAX_REVIEW_ATTEMPTS)
+        self.assertEqual(mock_review.call_count, orchestrator.MAX_REVIEW_ATTEMPTS)
+        self.mock_git.commit.assert_not_called()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_low_risk_blocked_verdict_does_not_retry(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        # verdict=BLOCKED 代表评审要求人工决策，即便任务是 LOW Risk 也不允许自动 Retry。
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.return_value = _fake_review_result(verdict="BLOCKED", safe_to_commit=False)
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_REVIEW_FAILED)
+        self.assertEqual(mock_run_claude.call_count, 1)
+        self.assertEqual(mock_review.call_count, 1)
+        self.mock_git.commit.assert_not_called()
+
+
 class TestClaudeFailureBlocksValidationAndCommit(_OrchestratorTestBase):
     @mock.patch("automation.claude_runner.run_claude")
     @mock.patch("automation.validator.run_validation")

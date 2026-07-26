@@ -7,12 +7,21 @@
 Auto Dev 启动后持续自动循环执行「Planner → Claude Code → Build → Test → Review →
 更新 Progress → Git Commit → 下一任务」，不等待人工确认，直到满足下方任一停止条件
 才退出：Planner 返回 DONE（已无更多可安全规划的新任务）、Planner 返回 BLOCKED（存在
-开发方向但因权限/依赖/环境/资源或治理原则限制无法安全继续）、Claude 执行失败、构建/
-测试失败、Review 未通过（FAIL 或 BLOCKED）、OpenAI 调用失败、已有的超时限制触发，或
-用户按 Ctrl+C 主动中断。每个任务评审通过后先更新 `docs/project/AUTODEV_PROGRESS.md`，
-再与本次代码改动一起执行**一次** `git commit`（提交信息统一为 `AutoDev(task-NNN): ...`，
-任务序号自动递增），仅提交到本地仓库，任何情况下都不会执行 `git push`。`--dry-run`、
+开发方向但因权限/依赖/环境/资源或治理原则限制无法安全继续）、Claude 执行失败、Review
+未通过且不满足自动重试条件、OpenAI 调用失败、已有的超时限制触发，或用户按 Ctrl+C
+主动中断。每个任务评审通过后先更新 `docs/project/AUTODEV_PROGRESS.md`，再与本次代码
+改动一起执行**一次** `git commit`（提交信息统一为 `AutoDev(task-NNN): ...`，任务序号
+自动递增），仅提交到本地仓库，任何情况下都不会执行 `git push`。`--dry-run`、
 `--no-commit`、`--allow-dirty` 仍只用于单任务预览/调试，使用这些参数时不会进入连续循环。
+
+Review Retry（仅 LOW Risk 自动重试，最多 3 次）：
+构建/测试未全部通过，或 Review 结论为 FAIL 时，若该任务的 risk_level 为 LOW，Auto Dev
+不会立即停止，而是把 Review 的 summary/blocking_issues/non_blocking_suggestions 完整
+发回 Claude，要求"只修复 Review 指出的问题，不重新规划、不改变任务目标、不新增功能"，
+修复后自动重新执行 `git diff --check` → `npm run build`（内含 `vue-tsc -b`）→ 任务附加
+验证命令 → 重新 Review，最多进行 3 轮（Attempt 1 为初次执行，Attempt 2/3 为重试）；
+3 轮仍未通过、Review 结论为 BLOCKED（要求人工决策）、或任务 risk_level 为 MEDIUM/HIGH/
+BLOCKED/DONE 时，立即停止，不做任何自动重试，交由人工处理。
 """
 from __future__ import annotations
 
@@ -44,7 +53,7 @@ from automation.config import (
     load_config,
 )
 from automation.git_service import GitError, GitService
-from automation.models import ReviewResult, RunReport
+from automation.models import CommandResult, ReviewResult, RunReport
 from automation.report_writer import (
     setup_run_logger,
     write_json_file,
@@ -61,6 +70,11 @@ EXIT_SECURITY_FAILURE = 3
 EXIT_CLAUDE_FAILURE = 4
 EXIT_VALIDATION_FAILURE = 5
 EXIT_REVIEW_FAILED = 6
+
+# Review Retry：单个任务内最多允许的评审轮次（Attempt 1 为初次执行，
+# 之后每轮为一次重试），仅 risk_level 为 LOW 的任务允许自动重试。
+MAX_REVIEW_ATTEMPTS = 3
+RETRY_ELIGIBLE_RISK_LEVEL = "LOW"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -326,86 +340,163 @@ def run_task_cycle(args: argparse.Namespace, task_number: int) -> tuple[int, str
         logger.info("验证命令：%s", task.validation_commands)
         return finalize("DRY_RUN_COMPLETE", None, EXIT_SUCCESS)
 
-    # 第五步：非交互调用 Claude Code CLI 执行任务
-    logger.info("调用 Claude Code CLI 执行任务，超时时间：%d 秒...", config.claude_timeout_seconds)
-    claude_prompt = claude_runner.build_task_prompt(
-        task_title=task.title,
-        objective=task.objective,
-        scope=task.scope,
-        files_allowed=task.files_allowed,
-        files_forbidden=task.files_forbidden,
-        acceptance_criteria=task.acceptance_criteria,
-        validation_commands=task.validation_commands,
-        developer_prompt=task.developer_prompt,
-    )
-    claude_result = claude_runner.run_claude(
-        claude_prompt, project_root=PROJECT_ROOT, timeout_seconds=config.claude_timeout_seconds
-    )
-    report.claude_result = claude_result
-    write_text_file(run_dir / "claude_stdout.txt", claude_result.stdout)
-    write_text_file(run_dir / "claude_stderr.txt", claude_result.stderr)
-
-    if claude_result.timed_out:
-        msg = "Claude Code 执行超时，已终止。"
-        logger.error(msg)
-        return finalize("CLAUDE_FAILED", msg, EXIT_CLAUDE_FAILURE)
-    if claude_result.exit_code != 0:
-        msg = f"Claude Code 执行失败，退出码：{claude_result.exit_code}"
-        logger.error(msg)
-        return finalize("CLAUDE_FAILED", msg, EXIT_CLAUDE_FAILURE)
-
-    logger.info("Claude Code 执行完成，耗时 %.1f 秒。", claude_result.duration_seconds)
-
-    # 第六步：自动验证
-    logger.info("执行自动验证（基础验证 + 任务附加验证命令）...")
-    validation_results, validation_passed = validator.run_validation(
-        project_root=PROJECT_ROOT, web_dir=WEB_DIR, extra_commands=task.validation_commands
-    )
-    report.validation_results = validation_results
-    write_json_file(run_dir / "validation.json", {"results": [r.to_dict() for r in validation_results]})
-    for r in validation_results:
-        status = "超时" if r.timed_out else ("通过" if r.exit_code == 0 else "失败")
-        logger.info("验证命令 [%s] cwd=%s：%s", r.command, r.cwd, status)
-    logger.info("Build/Test 验证：%s", "PASS" if validation_passed else "FAIL")
-
-    # 第七步：调用 OpenAI 评审器（无论验证是否通过，均收集证据供评审与人工复核）
-    logger.info("调用 OpenAI 对本次改动进行代码评审...")
-    review_context = context_loader.build_reviewer_context(
-        task=task, claude_result=claude_result, validation_results=validation_results
-    )
+    # 第五～七步：Claude 执行 → 自动验证 → OpenAI 评审，Attempt 1 为初次执行；
+    # 若 verdict=FAIL（或验证未通过）且任务 risk_level=LOW，最多自动重试到 Attempt 3
+    # （Review Retry，见文件头说明）。review is None 说明评审器本身调用失败/输出不合法。
+    claude_result: CommandResult | None = None
+    validation_results: list[CommandResult] = []
+    validation_passed = False
     review: ReviewResult | None = None
-    try:
-        review, review_usage = openai_client.review_change(client, config, review_context)
-        report.token_usages.append(review_usage)
-    except openai_client.ReviewerError as exc:
-        if exc.usage is not None:
-            report.token_usages.append(exc.usage)
-        logger.error("评审器输出不合法：%s", exc)
-    except Exception as exc:  # noqa: BLE001 - OpenAI SDK 可能抛出多种异常
-        logger.error("调用 OpenAI 评审器时发生错误：%s", exc)
 
-    if review is not None:
-        report.review = review
-        write_json_file(run_dir / "review.json", review.to_dict())
-        logger.info("评审结论：%s；是否允许提交：%s", review.verdict, review.safe_to_commit)
-        logger.info("评审摘要：%s", review.summary)
-        if review.blocking_issues:
-            logger.warning("阻塞问题：%s", review.blocking_issues)
+    for attempt_number in range(1, MAX_REVIEW_ATTEMPTS + 1):
+        suffix = "" if attempt_number == 1 else f"_attempt{attempt_number}"
 
-    if not validation_passed:
-        msg = "自动验证未全部通过，已停止，不允许提交。"
-        logger.error(msg)
-        return finalize("VALIDATION_FAILED", msg, EXIT_VALIDATION_FAILURE)
+        if attempt_number == 1:
+            logger.info("调用 Claude Code CLI 执行任务，超时时间：%d 秒...", config.claude_timeout_seconds)
+            claude_prompt = claude_runner.build_task_prompt(
+                task_title=task.title,
+                objective=task.objective,
+                scope=task.scope,
+                files_allowed=task.files_allowed,
+                files_forbidden=task.files_forbidden,
+                acceptance_criteria=task.acceptance_criteria,
+                validation_commands=task.validation_commands,
+                developer_prompt=task.developer_prompt,
+            )
+        else:
+            logger.warning(
+                "===== Review Retry Attempt %d（LOW Risk 自动重试，仅修复 Review 指出的问题）=====",
+                attempt_number,
+            )
+            claude_prompt = claude_runner.build_fix_prompt(
+                task_title=task.title,
+                scope=task.scope,
+                files_allowed=task.files_allowed,
+                files_forbidden=task.files_forbidden,
+                review_summary=review.summary if review else "",
+                blocking_issues=review.blocking_issues if review else [],
+                non_blocking_suggestions=review.non_blocking_suggestions if review else [],
+            )
 
-    if review is None:
-        msg = "评审器未能生成有效评审结果，视为未通过，不允许提交。"
-        logger.error(msg)
-        return finalize("REVIEW_FAILED", msg, EXIT_REVIEW_FAILED)
+        claude_result = claude_runner.run_claude(
+            claude_prompt, project_root=PROJECT_ROOT, timeout_seconds=config.claude_timeout_seconds
+        )
+        report.claude_result = claude_result
+        write_text_file(run_dir / f"claude_stdout{suffix}.txt", claude_result.stdout)
+        write_text_file(run_dir / f"claude_stderr{suffix}.txt", claude_result.stderr)
 
-    if review.verdict != "PASS":
-        msg = f"评审未通过（verdict={review.verdict}），不允许提交。"
-        logger.error(msg)
-        return finalize("REVIEW_FAILED", msg, EXIT_REVIEW_FAILED)
+        if claude_result.timed_out:
+            msg = f"Claude Code 执行超时，已终止（Attempt {attempt_number}）。"
+            logger.error(msg)
+            return finalize("CLAUDE_FAILED", msg, EXIT_CLAUDE_FAILURE)
+        if claude_result.exit_code != 0:
+            msg = f"Claude Code 执行失败，退出码：{claude_result.exit_code}（Attempt {attempt_number}）"
+            logger.error(msg)
+            return finalize("CLAUDE_FAILED", msg, EXIT_CLAUDE_FAILURE)
+
+        logger.info(
+            "Claude Code 执行完成（Attempt %d），耗时 %.1f 秒。", attempt_number, claude_result.duration_seconds
+        )
+
+        # 自动验证：基础验证（git diff --check、npm run build，其中 npm run build
+        # 已内含 vue-tsc -b 类型检查）+ 任务附加验证命令
+        logger.info("执行自动验证（Attempt %d：基础验证 + 任务附加验证命令）...", attempt_number)
+        validation_results, validation_passed = validator.run_validation(
+            project_root=PROJECT_ROOT, web_dir=WEB_DIR, extra_commands=task.validation_commands
+        )
+        report.validation_results = validation_results
+        write_json_file(
+            run_dir / f"validation{suffix}.json", {"results": [r.to_dict() for r in validation_results]}
+        )
+        validation_duration = sum(r.duration_seconds for r in validation_results)
+        for r in validation_results:
+            status = "超时" if r.timed_out else ("通过" if r.exit_code == 0 else "失败")
+            logger.info("验证命令 [%s] cwd=%s：%s", r.command, r.cwd, status)
+        logger.info("Build/Test 验证（Attempt %d）：%s", attempt_number, "PASS" if validation_passed else "FAIL")
+
+        # 调用 OpenAI 评审器（无论验证是否通过，均收集证据供评审与人工复核）
+        logger.info("调用 OpenAI 对本次改动进行代码评审（Attempt %d）...", attempt_number)
+        review_context = context_loader.build_reviewer_context(
+            task=task, claude_result=claude_result, validation_results=validation_results
+        )
+        review = None
+        try:
+            review, review_usage = openai_client.review_change(client, config, review_context)
+            report.token_usages.append(review_usage)
+        except openai_client.ReviewerError as exc:
+            if exc.usage is not None:
+                report.token_usages.append(exc.usage)
+            logger.error("评审器输出不合法（Attempt %d）：%s", attempt_number, exc)
+        except Exception as exc:  # noqa: BLE001 - OpenAI SDK 可能抛出多种异常
+            logger.error("调用 OpenAI 评审器时发生错误（Attempt %d）：%s", attempt_number, exc)
+
+        if review is not None:
+            report.review = review
+            write_json_file(run_dir / f"review{suffix}.json", review.to_dict())
+            logger.info(
+                "评审结论（Attempt %d）：%s；是否允许提交：%s", attempt_number, review.verdict, review.safe_to_commit
+            )
+            logger.info("评审摘要（Attempt %d）：%s", attempt_number, review.summary)
+            if review.blocking_issues:
+                logger.warning("阻塞问题（Attempt %d）：%s", attempt_number, review.blocking_issues)
+
+        report.review_attempts.append({
+            "attempt_number": attempt_number,
+            "is_retry": attempt_number > 1,
+            "claude_exit_code": claude_result.exit_code,
+            "claude_duration_seconds": claude_result.duration_seconds,
+            "validation_passed": validation_passed,
+            "validation_duration_seconds": validation_duration,
+            "review_verdict": review.verdict if review else None,
+            "review_summary": review.summary if review else None,
+            "blocking_issues": review.blocking_issues if review else [],
+        })
+
+        if validation_passed and review is not None and review.verdict == "PASS":
+            logger.info("Review 通过（Attempt %d），进入提交流程。", attempt_number)
+            break
+
+        # ——— 以下为未通过的分支：判断是直接停止，还是自动进入 Review Retry ———
+
+        if review is None:
+            msg = "评审器未能生成有效评审结果，视为未通过，不允许提交，不做自动重试。"
+            logger.error(msg)
+            status = "VALIDATION_FAILED" if not validation_passed else "REVIEW_FAILED"
+            exit_code = EXIT_VALIDATION_FAILURE if not validation_passed else EXIT_REVIEW_FAILED
+            return finalize(status, msg, exit_code)
+
+        if not validation_passed and review.verdict == "PASS":
+            # 评审结论与验证结果矛盾（正常情况下评审器规则会因验证失败而判 FAIL），
+            # 出于防御性考虑视为证据不足，直接停止，不做自动重试。
+            msg = "自动验证未全部通过（且评审结论与验证结果矛盾），已停止，不允许提交，不做自动重试。"
+            logger.error(msg)
+            return finalize("VALIDATION_FAILED", msg, EXIT_VALIDATION_FAILURE)
+
+        if review.verdict == "BLOCKED":
+            msg = f"评审要求人工决策（verdict=BLOCKED），不允许提交，不做自动重试。原因：{review.summary}"
+            logger.warning(msg)
+            return finalize("REVIEW_FAILED", msg, EXIT_REVIEW_FAILED)
+
+        # 到这里意味着 verdict=FAIL（或验证未通过导致的等效失败），是否自动重试
+        # 取决于任务风险等级：只有 LOW Risk 才允许自动重试，且最多 MAX_REVIEW_ATTEMPTS 次。
+        if task.risk_level != RETRY_ELIGIBLE_RISK_LEVEL:
+            msg = (
+                f"评审未通过（verdict={review.verdict}），且任务风险等级为 {task.risk_level}"
+                "（≥ MEDIUM，不满足 Review Retry 的 LOW Risk 条件），不允许提交，已停止。"
+            )
+            logger.error(msg)
+            return finalize("REVIEW_FAILED", msg, EXIT_REVIEW_FAILED)
+
+        if attempt_number >= MAX_REVIEW_ATTEMPTS:
+            msg = f"已连续 {MAX_REVIEW_ATTEMPTS} 次 Review 未通过（LOW Risk 自动重试已用尽），不允许提交，已停止。"
+            logger.error(msg)
+            return finalize("REVIEW_FAILED", msg, EXIT_REVIEW_FAILED)
+
+        logger.warning(
+            "Review Attempt %d 未通过（LOW Risk，verdict=%s），自动进入 Retry Attempt %d...",
+            attempt_number, review.verdict, attempt_number + 1,
+        )
+        # 循环继续，进入下一轮 Attempt
 
     # 第八步：根据规则决定是否自动提交
     can_commit = should_auto_commit(

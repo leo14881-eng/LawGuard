@@ -149,6 +149,19 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
 
     error_line = f"（错误信息：{report.error_message}）" if report.error_message else ""
 
+    retry_lines: list[str] = []
+    for entry in report.review_attempts:
+        label = f"Attempt {entry['attempt_number']}" + ("（Retry）" if entry.get("is_retry") else "（初次执行）")
+        verdict = entry.get("review_verdict") or "（评审器未产出有效结论）"
+        validation_text = "PASS" if entry.get("validation_passed") else "FAIL"
+        retry_lines.append(
+            f"- {label}：验证={validation_text}（耗时 {entry.get('validation_duration_seconds', 0.0):.1f} 秒）；"
+            f"Review={verdict}；Claude 修复耗时 {entry.get('claude_duration_seconds', 0.0):.1f} 秒"
+        )
+        if entry.get("blocking_issues"):
+            retry_lines.extend(f"  - 阻塞问题：{i}" for i in entry["blocking_issues"])
+    retry_text = "\n".join(retry_lines) if len(report.review_attempts) > 1 else "（本次未触发 Review Retry）"
+
     content = f"""# LawGuard 自动化开发运行报告
 
 ## 1. 运行 ID
@@ -194,6 +207,9 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
 
 ## 14. OpenAI Token 用量
 {_format_token_usages(report.token_usages)}
+
+## 15. Review Retry 记录
+{retry_text}
 """
     reports_dir.mkdir(parents=True, exist_ok=True)
     path = reports_dir / f"{report.run_id}.md"

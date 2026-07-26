@@ -4,7 +4,7 @@
 LawGuard V1 —— Auto Dev 全自动开发循环
 
 ## Last Update
-2026-07-26T13:10:00
+2026-07-26T14:00:00
 
 ## Last Commit
 （本次人工会话尚未提交，见下方"P0.2 收尾"记录；此前一次 Auto Dev 自动提交为
@@ -71,6 +71,7 @@ task-003: feat: 首页新增 QuickNavCard 快速导航区块并嵌入 HomeView�
 | 首屏 theme-color 深蓝闪烁 | VERIFIED | `index.html`/`site.webmanifest` 的 `theme-color`/`theme_color` 由 `#14335c` 改为 `#ffffff`，避免浏览器地址栏/窗口在刷新过程中短暂染成深蓝色 | `npm run build` 通过；CDP 逐帧采样确认页面 DOM 本身从未渲染蓝色（见下一行） | 2026-07-26 | 用户反馈"刷新时蓝色一闪而过"，排查后确认根因是浏览器 chrome 对 theme-color 的渲染，不是页面内容问题 |
 | 首屏闪烁回归测试 | VERIFIED | 新增 `web/playwright.config.ts` + `web/e2e/first-paint-flash.spec.ts`，`package.json` 新增 `test:e2e` 脚本与 `@playwright/test` devDependency | `npm run test:e2e` 2 项通过（首页 + 一个懒加载子路由，CPU 4x 降速 + Fast 3G + 缓存禁用条件下采样 html/body/#app 背景色，断言无蓝色帧） | 2026-07-26 | 不影响 `npm run test`（已在 `vite.config.ts` 的 Vitest `exclude` 中排除 `e2e/**`） |
 | 全站正文排版统一（P0.2 收尾第二轮） | VERIFIED | 新增 Design Token `--content-width: 760px`；全局 `.prose` 工具类（统一阅读宽度/字号 16px/行高 1.8/分节间距 32px）；`/about`、`/documents`、`/official-channels`、`/privacy`、`/disclaimer`、`/legal-sources` 及 `DetailPageLayout.vue`（`/stages/:id`、`/rights-guide/:id`）统一接入；`.lead`/`.status-note`/`PageHeader__desc` 改用同一 Token；全局 `p`/`li` 改为 `text-wrap: wrap` + `overflow-wrap: break-word` + `word-break: normal`（不再用于普通正文的 `text-wrap: balance`/`pretty`，仅 h1/h2/Hero 短标题允许 balance）；`AboutView.vue` "直接访问者" 由错误包裹"主要是："改为正确包裹"直接访问者"本身 | `vue-tsc -b`/`npm run test`（29 项）/`npm run build` 通过；Playwright 对 8 个页面 × 桌面 1440/平板 768/移动 375 × fold/full 共 24 组截图人工检查，0 处横向滚动、0 处孤字/断词 | 2026-07-26 | 用户反馈"直接访问者"被拆成"直接访问"+"者主要是："，根因是 `.text-keep` 只包裹了"主要是："而未包裹"直接访问者"本身，叠加 `.lead` 640px 宽度约束；本轮同时修复标题/导语/列表/正文/提示框宽度不统一、正文与边界提示框留白过大两项问题 |
+| Auto Dev Review Retry（LOW Risk 自动重试机制） | VERIFIED | `automation/orchestrator.py`（`run_task_cycle` 内新增 Attempt 1～3 循环，替代原来的"Review FAIL 直接退出"）；`automation/claude_runner.py` 新增 `build_fix_prompt`（仅下发"修复 Review 指出的问题"，禁止重新规划/扩大范围/新增功能/改动法律内容）；`automation/models.py` 的 `RunReport` 新增 `review_attempts` 字段；`automation/report_writer.py` 运行报告新增"15. Review Retry 记录"小节 | `python -m pytest automation/tests`（162 项通过，含新增 4 项 Review Retry 回归测试：LOW Risk FAIL→Retry→PASS→Commit 全链路、MEDIUM Risk 不重试、连续 3 次 FAIL 后停止、verdict=BLOCKED 不重试） | 2026-07-26 | 以真实失败的 task-004（QuickNavCard aria-label，risk_level=LOW，verdict=FAIL）场景为原型构造回归测试；仅当 risk_level=LOW 且 verdict=FAIL（或验证未通过但评审未判 BLOCKED）时自动重试，最多 3 轮，Attempt 间只把 Review 的 summary/blocking_issues/non_blocking_suggestions 发回 Claude 要求"只修复被指出的问题"；verdict=BLOCKED（人工决策）、risk_level≥MEDIUM、或 3 轮仍 FAIL 时立即停止，不做任何自动重试；Planner→Claude→Build→Review→Commit→Report→Git 既有结构与 `git push` 禁令保持不变 |
 
 ### 重复实现检查结果（本次设计审计，2026-07-26）
 
