@@ -3,6 +3,7 @@ import NoticeBanner from '../components/NoticeBanner.vue'
 import PageHeader from '../components/PageHeader.vue'
 import TrustBanner from '../components/TrustBanner.vue'
 import LegalDisclaimer from '../components/LegalDisclaimer.vue'
+import SharePanel from '../components/SharePanel.vue'
 
 const privacyPoints = [
   '纯公益',
@@ -102,10 +103,18 @@ const fraudBehaviors = [
         </ul>
       </NoticeBanner>
     </section>
+
+    <section class="section about-share">
+      <SharePanel variant="compact" />
+    </section>
   </div>
 </template>
 
 <style scoped>
+.about-share {
+  padding-top: 0;
+}
+
 .privacy-list {
   list-style: none;
   padding: 0;

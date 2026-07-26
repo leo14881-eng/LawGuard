@@ -13,6 +13,7 @@ import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import TrustBanner from '../components/TrustBanner.vue'
 import PrintPageButton from '../components/PrintPageButton.vue'
 import PrintFooter from '../components/PrintFooter.vue'
+import SharePanel from '../components/SharePanel.vue'
 import EmergencyContactCard from '../components/EmergencyContactCard.vue'
 import SourceCitationCard from '../components/SourceCitationCard.vue'
 import {
@@ -338,6 +339,10 @@ const referencedLegalSources = computed(() =>
         <PrintPageButton page-title="被羁押后紧急行动清单 - 法护 LawGuard" />
         <button type="button" class="btn btn-secondary" @click="restart">重新开始</button>
       </div>
+
+      <div class="result-share no-print">
+        <SharePanel variant="primary" />
+      </div>
     </section>
 
     <PrintFooter />
@@ -528,5 +533,11 @@ const referencedLegalSources = computed(() =>
   flex-wrap: wrap;
   gap: var(--space-3);
   margin-top: var(--space-6);
+}
+
+.result-share {
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
 }
 </style>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#ffffff" />
+  <rect width="1200" height="190" fill="#eef2f7" />
+  <text x="64" y="110" font-family="'Microsoft YaHei','PingFang SC',sans-serif" font-size="64" font-weight="700" fill="#0b2545">LawGuard</text>
+  <text x="64" y="160" font-family="'Microsoft YaHei','PingFang SC',sans-serif" font-size="32" fill="#14335c">刑事案件公益应急导航平台</text>
+
+  <text x="64" y="270" font-family="'Microsoft YaHei','PingFang SC',sans-serif" font-size="30" font-weight="600" fill="#1f2937">纯公益 · 永久免费</text>
+  <text x="64" y="330" font-family="'Microsoft YaHei','PingFang SC',sans-serif" font-size="28" fill="#1e6b3a">✓ 不主动联系用户</text>
+  <text x="64" y="372" font-family="'Microsoft YaHei','PingFang SC',sans-serif" font-size="28" fill="#1e6b3a">✓ 不收集个人信息</text>
+  <text x="64" y="414" font-family="'Microsoft YaHei','PingFang SC',sans-serif" font-size="28" fill="#1e6b3a">✓ 不推荐律师，不接受案件委托</text>
+
+  <text x="64" y="580" font-family="'Microsoft YaHei','PingFang SC',sans-serif" font-size="22" fill="#5b6b7f">基于官方法律依据的程序导航 · 权利指引 · 文书核对 · 官方救济渠道</text>
+</svg>

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { applyRouteSeo } from '../utils/seo'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -57,11 +58,19 @@ const router = createRouter({
       component: () => import('../views/ComingSoonView.vue'),
     },
     {
-      // 未匹配到的路径统一进入占位页，避免出现 404
+      // 真正未匹配到任何已知路径时展示 404 页面；与 /coming-soon（站内已知链接
+      // 指向的"待开放"内容占位页）含义不同，不合并使用。
       path: '/:pathMatch(.*)*',
-      redirect: '/coming-soon',
+      name: 'not-found',
+      component: () => import('../views/NotFoundView.vue'),
     },
   ],
+})
+
+// 每次路由跳转后同步更新 document.title / description / canonical / Open Graph /
+// Twitter Card，覆盖首页与返回首页的场景（见 utils/seo.ts）。
+router.afterEach((to) => {
+  applyRouteSeo(typeof to.name === 'string' ? to.name : undefined, to.path)
 })
 
 export default router

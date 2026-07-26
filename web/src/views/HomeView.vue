@@ -7,7 +7,23 @@ import AppCard from '../components/AppCard.vue'
 import NoticeBanner from '../components/NoticeBanner.vue'
 import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import TrustBanner from '../components/TrustBanner.vue'
+import SharePanel from '../components/SharePanel.vue'
 import { stages } from '../data/stages'
+import { useJsonLd } from '../composables/useJsonLd'
+import { getSiteUrl } from '../utils/seo'
+
+const siteUrl = getSiteUrl()
+useJsonLd({
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'LawGuard',
+  alternateName: '法护',
+  ...(siteUrl ? { url: siteUrl } : {}),
+  description:
+    '面向刑事案件当事人及家属的纯公益应急导航平台，提供基于官方法律依据的程序导航、权利指引、文书核对和官方救济渠道。',
+  inLanguage: 'zh-CN',
+  isAccessibleForFree: true,
+})
 
 const familySteps = [
   {
@@ -59,6 +75,12 @@ const trustPoints = [
     </div>
 
     <HeroSection />
+
+    <section class="section share-section">
+      <div class="container">
+        <SharePanel variant="primary" />
+      </div>
+    </section>
 
     <section class="section">
       <div class="container">
@@ -159,6 +181,11 @@ const trustPoints = [
 <style scoped>
 .trust-banner-slot {
   padding-top: var(--space-4);
+}
+
+.share-section {
+  padding-top: 0;
+  padding-bottom: var(--space-6);
 }
 
 .section__lead {

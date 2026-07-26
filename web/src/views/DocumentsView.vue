@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader.vue'
 import PrintPageButton from '../components/PrintPageButton.vue'
 import PrintFooter from '../components/PrintFooter.vue'
 import TrustBanner from '../components/TrustBanner.vue'
+import SharePanel from '../components/SharePanel.vue'
 
 const methods = [
   '核对文书上的姓名、身份信息与案件编号等基础信息是否准确。',
@@ -26,6 +27,8 @@ const methods = [
         <PrintPageButton page-title="文书核对清单 - 法护 LawGuard" />
       </template>
     </PageHeader>
+
+    <SharePanel variant="compact" class="no-print" />
 
     <TrustBanner variant="compact" />
 

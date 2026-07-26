@@ -4,6 +4,7 @@ import NoticeBanner from '../components/NoticeBanner.vue'
 import PageHeader from '../components/PageHeader.vue'
 import SourceCitationCard from '../components/SourceCitationCard.vue'
 import TrustBanner from '../components/TrustBanner.vue'
+import SharePanel from '../components/SharePanel.vue'
 import type { StatusKind } from '../components/StatusBadge.vue'
 
 /**
@@ -52,6 +53,8 @@ const channelSources: ChannelSourceRecord[] = [
       title="官方救济渠道"
       description="以下为一般性官方渠道说明与入口占位，具体链接与联系方式在核验前不作为正式官方地址展示。"
     />
+
+    <SharePanel variant="compact" />
 
     <TrustBanner variant="compact" />
 

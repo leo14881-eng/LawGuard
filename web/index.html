@@ -3,9 +3,38 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Apple 触控图标规范上要求 PNG 位图，本项目目前只有矢量 favicon.svg，
+         暂以其作为过渡方案；后续如需严格符合规范，需要额外生成
+         apple-touch-icon.png（180x180）位图文件。 -->
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#14335c" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="法护 LawGuard —— 免费公益的刑事诉讼权利普法平台，提供一般性权利说明、程序指引、文书核对方法和官方救济渠道。LawGuard 是纯公益法律信息平台，永久免费，不会主动联系用户，不会收集个人信息。" />
-    <title>法护 LawGuard —— 刑事诉讼权利普法平台</title>
+    <meta
+      name="description"
+      content="LawGuard 是面向刑事案件当事人及家属的纯公益应急导航平台，提供基于官方法律依据的程序导航、权利指引、文书核对和官方救济渠道。永久免费，不主动联系用户，不收集个人信息。"
+    />
+    <meta name="robots" content="index, follow" />
+    <title>LawGuard｜刑事案件公益应急导航平台</title>
+
+    <!-- 以下为首屏静态默认值（供不执行 JS 的爬虫/抓取工具读取）；路由切换后由
+         web/src/utils/seo.ts 动态更新为对应页面的 title/description/OG/Twitter。 -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="LawGuard" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:title" content="LawGuard｜刑事案件公益应急导航平台" />
+    <meta
+      property="og:description"
+      content="LawGuard 是面向刑事案件当事人及家属的纯公益应急导航平台。永久免费，不主动联系用户，不收集个人信息。"
+    />
+    <meta property="og:image" content="/og-image.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="LawGuard｜刑事案件公益应急导航平台" />
+    <meta
+      name="twitter:description"
+      content="LawGuard 是面向刑事案件当事人及家属的纯公益应急导航平台。永久免费，不主动联系用户，不收集个人信息。"
+    />
+    <meta name="twitter:image" content="/og-image.svg" />
   </head>
   <body>
     <div id="app"></div>

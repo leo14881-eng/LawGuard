@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader.vue'
 import PrintPageButton from '../components/PrintPageButton.vue'
 import PrintFooter from '../components/PrintFooter.vue'
 import TrustBanner from '../components/TrustBanner.vue'
+import SharePanel from '../components/SharePanel.vue'
 import { stages } from '../data/stages'
 </script>
 
@@ -20,6 +21,8 @@ import { stages } from '../data/stages'
         <PrintPageButton page-title="刑事诉讼阶段导航 - 法护 LawGuard" />
       </template>
     </PageHeader>
+
+    <SharePanel variant="compact" class="no-print" />
 
     <TrustBanner variant="compact" />
 
