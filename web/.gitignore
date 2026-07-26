@@ -16,6 +16,9 @@ dist-ssr
 test-results
 playwright-report
 
+# 调试/复现问题时用的一次性临时脚本目录，不属于项目正式代码
+.tmp-check
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
