@@ -2,6 +2,7 @@
 import ChannelCard from '../components/ChannelCard.vue'
 import NoticeBanner from '../components/NoticeBanner.vue'
 import PageHeader from '../components/PageHeader.vue'
+import PrintPageButton from '../components/PrintPageButton.vue'
 import SourceCitationCard from '../components/SourceCitationCard.vue'
 import TrustBanner from '../components/TrustBanner.vue'
 import SharePanel from '../components/SharePanel.vue'
@@ -52,7 +53,11 @@ const channelSources: ChannelSourceRecord[] = [
     <PageHeader
       title="官方救济渠道"
       description="以下为一般性官方渠道说明与入口占位，具体链接与联系方式在核验前不作为正式官方地址展示。"
-    />
+    >
+      <template #actions>
+        <PrintPageButton page-title="官方救济渠道 - 法护 LawGuard" />
+      </template>
+    </PageHeader>
 
     <SharePanel variant="compact" />
 
