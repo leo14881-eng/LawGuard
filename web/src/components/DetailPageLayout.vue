@@ -33,7 +33,7 @@ withDefaults(
 </script>
 
 <template>
-  <div class="container section detail-page">
+  <div class="container section prose detail-page">
     <TrustBanner variant="print" />
 
     <PageHeader :title="title" :description="summary">
@@ -81,9 +81,8 @@ withDefaults(
 </template>
 
 <style scoped>
-.detail-page {
-  max-width: 840px;
-}
+/* 阅读宽度、正文字号与行高统一复用全局 .prose（见 style.css），
+   不在本组件内重复定义，避免与其它说明类页面的正文宽度产生偏差。 */
 
 .detail-block {
   margin-top: var(--space-8);

@@ -149,7 +149,7 @@ const trustPoints = [
       <div class="container boundary">
         <div class="boundary__intro">
           <h2>使用边界</h2>
-          <p class="boundary__lead">帮助您正确理解本平台能提供什么、不能提供什么。</p>
+          <p class="boundary__lead">帮助您正确理解本平台能提供什么、<span class="text-keep">不能提供什么</span>。</p>
         </div>
         <div class="boundary__content">
           <LegalDisclaimer expanded />
@@ -302,11 +302,6 @@ const trustPoints = [
   margin: 0;
   color: var(--color-text-muted);
   font-size: 14px;
-  /* 覆盖全局 p 的 text-wrap: pretty：这段文字所在的窄栏（桌面端固定 280px）
-     容易在结尾只剩两三个字被挤到下一行，balance 针对短文本块平均分配每行
-     宽度，比 pretty 更适合这种"一两句话的窄栏文案"场景（同款用法见
-     HeroSection 的 .hero__title）。 */
-  text-wrap: balance;
 }
 
 .boundary__content {

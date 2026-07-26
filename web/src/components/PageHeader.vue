@@ -35,7 +35,7 @@ withDefaults(
 .page-header__desc {
   color: var(--color-text-muted);
   font-size: var(--font-size-body);
-  max-width: 640px;
+  max-width: var(--content-width);
   margin-bottom: 0;
 }
 

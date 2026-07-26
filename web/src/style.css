@@ -92,6 +92,12 @@
 
   --max-width: 1200px;
 
+  /* 正文阅读宽度：用于说明类页面（关于/文书核对/官方渠道/隐私/使用边界/法律来源/
+     诉讼阶段详情/权利指引详情等）的标题、导语、列表、段落、提示框统一阅读列宽，
+     避免同一页面里部分文字 640px、部分文字铺满 1200px 容器的宽度不统一问题。
+     桌面端中文正文每行约 40～50 字，符合舒适阅读行长。 */
+  --content-width: 760px;
+
   /* ===== 布局尺寸 =====
      全站唯一的 Header 高度来源，AppHeader.vue 的 height/top 定位均引用本变量，
      禁止在组件内重复写死同一数值（历史上曾在两处各自硬编码 60px）。 */
@@ -157,16 +163,26 @@ h3 {
   font-size: var(--font-size-block-title);
 }
 
+/* 普通正文（p/li）统一使用正常换行规则：不使用 text-wrap: balance——balance 会
+   把每行拉到等宽，适合一两行的短标题，但用在多行正文上会打乱正常的自然换行、
+   在窄栏中更容易把固定词组从中间断开；也不使用 word-break: break-all，避免
+   西文单词/数字被从中间截断。孤字换行请优先用 .text-keep 包裹具体短语解决，
+   不要整段套用 balance。 */
+p,
+li {
+  text-wrap: wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
 p {
   margin: 0 0 var(--space-3);
   color: var(--color-text);
-  /* 现代浏览器（Chromium 系）下自动避免"孤字换行"（行尾只剩一两个字被挤到下一行）；
-     不支持的浏览器忽略该值，回退为默认换行，不影响布局。 */
-  text-wrap: pretty;
 }
 
-/* 防止中文短语中间被断开换行导致孤字（如"主要是"被拆成"主"+"要是"）。
-   只包裹容易在行尾被断开的固定短语/词组，不用于大段正文。 */
+/* 防止中文固定短语中间被断开换行导致孤字（如"直接访问者"被拆成
+   "直接访问"+"者"）。只包裹确实需要保持完整的固定短语/词组本身，
+   不得把该短语后面不相关的文字也一起包进来，更不能用于大段正文。 */
 .text-keep {
   white-space: nowrap;
 }
@@ -202,7 +218,7 @@ ul {
    scoped 样式重复定义，统一收编为全局类，避免同一段样式散落在 5 个文件里。 */
 .lead {
   color: var(--color-text-muted);
-  max-width: 640px;
+  max-width: var(--content-width);
   margin-bottom: var(--space-5);
 }
 
@@ -214,7 +230,41 @@ ul {
   padding: var(--space-1) var(--space-4);
   color: var(--color-text-muted);
   font-size: var(--font-size-caption);
-  max-width: 720px;
+  max-width: var(--content-width);
+}
+
+/* 统一正文阅读列宽：说明类页面（关于/文书核对/官方渠道/隐私/使用边界/法律来源/
+   诉讼阶段详情/权利指引详情）的标题、导语、列表、段落、提示框（NoticeBanner/
+   LegalDisclaimer）统一包在本容器内，共用同一条阅读轴线，替代此前部分文字靠
+   .lead 的 640px、部分文字不受限直接铺满 1200px 容器的不一致状态。容器内正文
+   字号与行高按可读性单独设定，不改动全局 :root 的基础字号/行高（避免影响按钮、
+   徽标、卡片等其它非正文组件）。 */
+.prose {
+  max-width: var(--content-width);
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+.prose h2:first-child {
+  margin-top: 0;
+}
+
+/* 列表与相邻段落的间距：全局 ul 默认 margin:0（供导航/卡片等组件自行控制间距），
+   但在正文阅读区里，紧跟在列表后面的段落需要和"段落到段落"一致的间距，
+   否则列表末行会和下一段文字紧贴在一起，破坏统一的段落节奏。 */
+.prose ul {
+  margin-bottom: var(--space-4);
+}
+
+.prose li {
+  margin-bottom: var(--space-1);
+}
+
+/* 阅读列内的分节间距：不论直接子元素是 <section>、NoticeBanner 还是
+   LegalDisclaimer，统一用 32px 节奏衔接，替代各页面重复堆叠 .section
+   （40px 上下内边距、相邻两节之间会叠加到 80px）造成的忽大忽小留白。 */
+.prose > * + * {
+  margin-top: var(--space-8);
 }
 
 /* 按钮：统一 default / hover / focus / disabled / loading 状态，

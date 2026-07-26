@@ -374,6 +374,10 @@ interface Stage {
   （浅黄色系，仅用于真正需要用户注意的安全提醒）、
   `--color-success/warning/error/info/disabled-*`（低饱和语义色，红色仅用于真正的
   错误/危险场景）；
+- 阅读宽度：`--content-width: 760px`，用于说明类页面（关于/文书核对/官方渠道/隐私/
+  使用边界/法律来源/诉讼阶段详情/权利指引详情）的标题、导语、列表、段落、提示框统一
+  阅读列宽，配合全局 `.prose` 工具类使用（见 `web/src/style.css`），禁止页面各自
+  再定义不同的正文最大宽度；
 - 圆角：`--radius/-sm/-lg/-pill`；阴影：`--shadow-sm/-md`；
 - 间距：`--space-1` ~ `--space-16`（8px 基准 spacing scale）；
 - 字体：`--font-size-page-title/section-title/block-title/body/caption/label/metric`；
@@ -534,6 +538,17 @@ D:\SOFT\LawGuard
   ⑤ 修复路由懒加载切换/刷新页面时因异步组件无 loading 占位、Footer 短暂贴近
   Header 造成的"蓝色页面一闪而过"视觉跳动（`App.vue` 新增 `Suspense` +
   `AppLoading` 兜底）。详见 `docs/project/AUTODEV_PROGRESS.md` 功能状态表。
+- 2026-07-26：排查用户反馈的"刷新页面蓝色闪烁"问题，确认根因是 `index.html`/
+  `site.webmanifest` 的 `theme-color` 深蓝色被浏览器用于渲染地址栏/窗口区域，
+  已改为白色；新增 `web/e2e/first-paint-flash.spec.ts`（`@playwright/test`）
+  固化"页面 DOM 本身不得出现非预期蓝色背景"的回归断言，通过 `npm run test:e2e`
+  单独运行，不影响 `npm run test` 的 Vitest 单测。
+- 2026-07-26：建立全站统一正文阅读宽度规范：新增 Design Token
+  `--content-width: 760px` 与全局 `.prose` 工具类（第 12.1 节），说明类页面
+  与详情页统一接入；明确"h1/h2/Hero 短标题可用 `text-wrap: balance`，普通
+  `p`/`li` 一律使用正常换行（`text-wrap: wrap` + `overflow-wrap: break-word` +
+  `word-break: normal`），孤字换行改用 `.text-keep` 包裹具体短语解决，不得对
+  普通正文整体使用 balance"，修复此前"直接访问者"被错误包裹导致断词的问题。
 
 ## 19. 打印与保存原则
 

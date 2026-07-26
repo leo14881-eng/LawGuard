@@ -58,58 +58,56 @@ const channelSources: ChannelSourceRecord[] = [
 
     <TrustBanner variant="compact" />
 
-    <NoticeBanner tone="info" title="链接核验说明">
-      <p>本页面暂不提供未经核验的具体网址或电话跳转链接，避免误导。核验完成后将更新为正式入口。</p>
-    </NoticeBanner>
+    <div class="prose">
+      <NoticeBanner tone="info" title="链接核验说明">
+        <p>本页面暂不提供未经核验的具体网址或电话跳转链接，避免误导。核验完成后将更新为正式入口。</p>
+      </NoticeBanner>
 
-    <div class="grid grid-2 channels-grid">
-      <ChannelCard
-        name="12348 公共法律服务热线"
-        description="全国公共法律服务热线，用于一般性法律咨询与服务引导。"
-      />
-      <ChannelCard
-        name="12309 检察服务中心"
-        description="检察机关服务热线与控告申诉渠道，用于反映检察环节相关事项。"
-      />
-    </div>
-
-    <section class="section">
-      <h2>使用说明</h2>
-      <p>官方渠道适用于反映诉求、寻求法律咨询或程序性帮助，不能替代执业律师提供的个案法律意见。</p>
-    </section>
-
-    <section class="section" aria-labelledby="channel-source-heading">
-      <h2 id="channel-source-heading">来源与版本记录</h2>
-      <p class="lead" id="channel-source-desc">
-        以下记录本页面官方渠道对应的来源标识、版本与最后核验日期。完成人工核验前，链接、
-        版本与核验日期统一标注为"待核验"，不作为已核验的官方地址或联系方式发布。
-      </p>
-      <div
-        class="grid grid-2 channel-source-list"
-        role="list"
-        aria-describedby="channel-source-desc"
-      >
-        <SourceCitationCard
-          v-for="source in channelSources"
-          :key="source.id"
-          role="listitem"
-          tabindex="0"
-          :source-name="source.title"
-          :source-ref="source.url"
-          :version="source.version"
-          :verified-date="source.lastVerifiedDate"
-          :status="source.status"
+      <div class="grid grid-2 channels-grid">
+        <ChannelCard
+          name="12348 公共法律服务热线"
+          description="全国公共法律服务热线，用于一般性法律咨询与服务引导。"
+        />
+        <ChannelCard
+          name="12309 检察服务中心"
+          description="检察机关服务热线与控告申诉渠道，用于反映检察环节相关事项。"
         />
       </div>
-    </section>
+
+      <section>
+        <h2>使用说明</h2>
+        <p>官方渠道适用于反映诉求、寻求法律咨询或程序性帮助，不能替代执业律师提供的个案法律意见。</p>
+      </section>
+
+      <section aria-labelledby="channel-source-heading">
+        <h2 id="channel-source-heading">来源与版本记录</h2>
+        <p class="lead" id="channel-source-desc">
+          以下记录本页面官方渠道对应的来源标识、版本与最后核验日期。完成人工核验前，链接、
+          版本与核验日期统一标注为"待核验"，不作为已核验的官方地址或联系方式发布。
+        </p>
+        <div
+          class="grid grid-2 channel-source-list"
+          role="list"
+          aria-describedby="channel-source-desc"
+        >
+          <SourceCitationCard
+            v-for="source in channelSources"
+            :key="source.id"
+            role="listitem"
+            tabindex="0"
+            :source-name="source.title"
+            :source-ref="source.url"
+            :version="source.version"
+            :verified-date="source.lastVerifiedDate"
+            :status="source.status"
+          />
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.channels-grid {
-  margin-top: var(--space-6);
-}
-
 .channel-source-list {
   margin-top: var(--space-4);
 }

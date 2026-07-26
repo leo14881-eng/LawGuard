@@ -21,47 +21,49 @@ import { legalSources } from '../data/legal_sources'
       </template>
     </PageHeader>
 
-    <LegalDisclaimer />
+    <div class="prose">
+      <LegalDisclaimer />
 
-    <section class="section">
-      <h2>内容依据原则</h2>
-      <ul>
-        <li>所有正式法律内容必须来自可核验的公开正式文本；</li>
-        <li>不得仅凭模型记忆作为发布依据；</li>
-        <li>未经执业律师审核前，统一标注为"待法律复核"。</li>
-      </ul>
-    </section>
+      <section>
+        <h2>内容依据原则</h2>
+        <ul>
+          <li>所有正式法律内容必须来自可核验的公开正式文本；</li>
+          <li>不得仅凭模型记忆作为发布依据；</li>
+          <li>未经执业律师审核前，统一标注为"待法律复核"。</li>
+        </ul>
+      </section>
 
-    <section class="section" aria-labelledby="version-record-heading">
-      <h2 id="version-record-heading">版本记录</h2>
-      <p class="lead" id="version-record-desc">
-        当前为 V1 初始版本，以下为候选官方来源记录。每条记录呈现顺序统一为
-        "官方来源 → LawGuard 解释 → 辅助说明"：先展示官方来源名称、链接、版本与最后核验日期，
-        再展示 LawGuard 的说明文字，最后展示辅助提示。链接、版本与核验日期在完成人工核验前
-        均标注为"待核验"，不作为已核验的法律条文引用。
-      </p>
-      <div
-        class="grid grid-2 source-list"
-        role="list"
-        aria-describedby="version-record-desc"
-      >
-        <SourceCitationCard
-          v-for="source in legalSources"
-          :key="source.id"
-          role="listitem"
-          :source-name="source.title"
-          :source-ref="source.url"
-          :version="source.version"
-          :verified-date="source.lastVerifiedDate"
-          :status="source.status"
+      <section aria-labelledby="version-record-heading">
+        <h2 id="version-record-heading">版本记录</h2>
+        <p class="lead" id="version-record-desc">
+          当前为 V1 初始版本，以下为候选官方来源记录。每条记录呈现顺序统一为
+          "官方来源 → LawGuard 解释 → 辅助说明"：先展示官方来源名称、链接、版本与最后核验日期，
+          再展示 LawGuard 的说明文字，最后展示辅助提示。链接、版本与核验日期在完成人工核验前
+          均标注为"待核验"，不作为已核验的法律条文引用。
+        </p>
+        <div
+          class="grid grid-2 source-list"
+          role="list"
+          aria-describedby="version-record-desc"
         >
-          <h4 class="sr-only">LawGuard 解释</h4>
-          <p class="source-explanation">{{ source.explanation }}</p>
-          <h4 class="sr-only">辅助说明</h4>
-          <p class="source-note">{{ source.note }}</p>
-        </SourceCitationCard>
-      </div>
-    </section>
+          <SourceCitationCard
+            v-for="source in legalSources"
+            :key="source.id"
+            role="listitem"
+            :source-name="source.title"
+            :source-ref="source.url"
+            :version="source.version"
+            :verified-date="source.lastVerifiedDate"
+            :status="source.status"
+          >
+            <h4 class="sr-only">LawGuard 解释</h4>
+            <p class="source-explanation">{{ source.explanation }}</p>
+            <h4 class="sr-only">辅助说明</h4>
+            <p class="source-note">{{ source.note }}</p>
+          </SourceCitationCard>
+        </div>
+      </section>
+    </div>
 
     <PrintFooter />
   </div>

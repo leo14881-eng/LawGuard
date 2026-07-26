@@ -33,21 +33,23 @@ const methods = [
 
     <p class="status-note">本页面内容为一般性方法框架，不针对任何具体文书或具体案件给出结论，具体条目待法律复核后正式发布。</p>
 
-    <section class="section">
-      <h2>一般性核对方法（待法律复核）</h2>
-      <ul class="list">
-        <li v-for="item in methods" :key="item">{{ item }}</li>
-      </ul>
-    </section>
+    <div class="prose">
+      <section>
+        <h2>一般性核对方法（待法律复核）</h2>
+        <ul class="list">
+          <li v-for="item in methods" :key="item">{{ item }}</li>
+        </ul>
+      </section>
 
-    <section class="section">
-      <h2>需要专业帮助时</h2>
-      <p>
-        如对具体文书内容存在疑问，建议及时联系执业律师，<span class="text-keep">或通过</span>
-        <RouterLink to="/official-channels">官方救济渠道</RouterLink>
-        寻求帮助。
-      </p>
-    </section>
+      <section>
+        <h2>需要专业帮助时</h2>
+        <p>
+          如对具体文书内容存在疑问，建议及时联系执业律师，<span class="text-keep">或通过</span>
+          <RouterLink to="/official-channels">官方救济渠道</RouterLink>
+          寻求帮助。
+        </p>
+      </section>
+    </div>
 
     <PrintFooter />
   </div>
