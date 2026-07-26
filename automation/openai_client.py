@@ -21,7 +21,7 @@ from automation.models import (
     TokenUsage,
 )
 from automation.security import check_files_lists, normalize_command
-from automation import value_gate
+from automation import backlog, value_gate
 
 logger = logging.getLogger("automation.openai_client")
 
@@ -200,6 +200,8 @@ def validate_task_payload(data: dict) -> list[str]:
     # （value_gate.validate_value_fields 内部已对 DONE/BLOCKED 直接放行）。
     if not isinstance(data.get("task_category"), str):
         issues.append("task_category 必须是字符串")
+    if not isinstance(data.get("backlog_id"), str):
+        issues.append("backlog_id 必须是字符串")
     for int_field in (
         "value_user", "value_product", "value_legal",
         "value_tech_debt", "repetition_penalty", "maintenance_cost",
@@ -227,6 +229,19 @@ def validate_task_payload(data: dict) -> list[str]:
     # 业务规则校验（分类枚举、分项取值范围、理由字段是否为空）。
     task_for_value_check = DevelopmentTask(**{f.name: data[f.name] for f in fields(DevelopmentTask)})
     issues.extend(value_gate.validate_value_fields(task_for_value_check))
+
+    # Backlog First 业务规则（2026-07-26 新增，见 automation/backlog.py 与
+    # LAWGUARD_SOT.md 第 21 节）：LOW/MEDIUM/HIGH 任务必须标明来源 Backlog 条目
+    # 或切片 ID，且该 ID 必须是 backlog.py 中真实存在的条目/切片，杜绝"编一个
+    # 看起来像 ID 的字符串"绕过校验；DONE/BLOCKED/NO_HIGH_VALUE_TASK 不要求。
+    if data["risk_level"] in ("LOW", "MEDIUM", "HIGH"):
+        candidate_backlog_id = data.get("backlog_id", "")
+        if not candidate_backlog_id.strip():
+            issues.append("backlog_id 不能为空：LOW/MEDIUM/HIGH 任务必须标明来源 Backlog 条目或切片 ID")
+        elif not backlog.is_valid_reference(candidate_backlog_id.strip()):
+            issues.append(
+                f"backlog_id 取值 {candidate_backlog_id!r} 不是 automation/backlog.py 中已存在的条目/切片 ID"
+            )
 
     return issues
 

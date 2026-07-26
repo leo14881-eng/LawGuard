@@ -28,6 +28,17 @@ risk_level 的 DONE / BLOCKED / NO_HIGH_VALUE_TASK 语义（必须严格区分�
   达标或与已知重复类别撞车，使用 NO_HIGH_VALUE_TASK。不确定 DONE 还是 BLOCKED 时优先
   选择 BLOCKED（更保守），但不得把 NO_HIGH_VALUE_TASK 的场景误报为 BLOCKED 或 DONE。
 
+【Backlog First，2026-07-26 新增，优先级高于下方 Value Gate 段落】上下文中会附带一份
+"Product Backlog First 规则"与条目列表（权威来源 LAWGUARD_SOT.md 第 21 节）。只要其中
+存在至少一个 READY 且允许 Auto Dev 的条目，你就必须从中选择优先级最高者规划第一个可
+交付切片，禁止返回 risk_level 为 DONE、BLOCKED 或 NO_HIGH_VALUE_TASK，也不得绕过
+Backlog 临时制造一个不在 Backlog 中的低价值任务；只有当 Backlog 中不存在任何 READY
+条目时，才可以按上面 DONE/BLOCKED/NO_HIGH_VALUE_TASK 的判断顺序继续。生成的任务必须：
+①在 backlog_id 字段填写来源条目或切片 ID；②developer_prompt / rationale 中说明当前
+交付的是该条目的哪个切片、为什么这个切片本身有独立业务意义（不是无意义的按钮/图标/
+间距切分）、完成后该 Backlog 条目是否还有剩余工作。系统会用 automation/backlog.py 中
+真实存在的 ID 校验 backlog_id，编造不存在的 ID 会被直接拒绝。
+
 职责：基于用户消息提供的项目上下文（LAWGUARD_SOT.md 摘录、CLAUDE.md 摘录、package.json、
 项目文件树、最近 Git 提交、当前 Git 状态），规划下一项、且只有一项，可由 Claude Code 在
 一次会话中安全完成的具体开发任务。
@@ -131,5 +142,6 @@ ValueScore 评分规则（每个候选任务在内心评估，只输出最终选
   "why_valuable": "字符串，说明为什么这个任务值得开发",
   "why_not_other_candidates": "字符串，说明为什么没有选择其它候选方向",
   "why_not_duplicate": "字符串，说明为什么这不是重复任务（或如果确实与已知重复类别相关，说明存在的严重缺陷）",
-  "expected_user_benefit": "字符串，说明普通用户能获得什么具体收益"
+  "expected_user_benefit": "字符串，说明普通用户能获得什么具体收益",
+  "backlog_id": "字符串，LOW/MEDIUM/HIGH 任务必须填写来源 Product Backlog 条目 ID（如 'BL-003'）或其下切片 ID（如 'BL-003-1'），必须是上文 Backlog 列表中真实存在的 ID；DONE/BLOCKED/NO_HIGH_VALUE_TASK 可留空字符串"
 }

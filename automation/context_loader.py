@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from automation import backlog
 from automation import config as cfg
 from automation import progress as progress_mod
 from automation import value_gate
@@ -36,7 +37,7 @@ _MAX_DIFF_PROMPT_CHARS = 8000
 # （职责已统一收归 docs/project/AUTODEV_PROGRESS.md，见下方 progress_mod），
 # 因此这里不再提取"当前开发进度""下一步计划"等章节关键词。
 _SOT_PLANNER_SECTION_KEYWORDS = (
-    "V1 功能范围", "V1 明确不做", "页面清单",
+    "V1 功能范围", "V1 明确不做", "页面清单", "Product Backlog",
 )
 _CLAUDE_MD_PLANNER_SECTION_KEYWORDS = (
     "项目状态", "仓库结构", "常用命令", "架构说明",
@@ -147,9 +148,12 @@ def build_planner_context() -> str:
     recent_task_history = value_gate.load_recent_tasks(cfg.RUNTIME_DIR, limit=30)
     capability_matrix_text = value_gate.build_capability_matrix_context()
     repetition_text = value_gate.build_repetition_context(recent_task_history)
+    backlog_text = backlog.build_planner_backlog_context()
 
     parts = [
         progress_section,
+        "",
+        backlog_text,
         "",
         capability_matrix_text,
         "",

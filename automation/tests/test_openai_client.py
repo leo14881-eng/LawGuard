@@ -44,6 +44,10 @@ VALID_TASK = {
     "why_not_other_candidates": "测试用途：无其它候选",
     "why_not_duplicate": "测试用途：非重复类别",
     "expected_user_benefit": "测试用途：模拟用户收益",
+    # Backlog First 字段（2026-07-26 新增）：LOW/MEDIUM/HIGH 任务必须引用
+    # automation/backlog.py 中真实存在的条目/切片 ID，这里用 BL-003-1（本地
+    # 全文搜索的第一个切片）。
+    "backlog_id": "BL-003-1",
 }
 
 VALID_REVIEW = {
@@ -100,6 +104,34 @@ class TestValidateTaskPayload(unittest.TestCase):
         # 候选，且非阻塞场景，同样不涉及实际文件改动，应跳过文件/命令校验。
         data = dict(VALID_TASK)
         data["risk_level"] = "NO_HIGH_VALUE_TASK"
+        data["files_allowed"] = []
+        data["files_forbidden"] = []
+        data["validation_commands"] = []
+        self.assertEqual(validate_task_payload(data), [])
+
+    def test_empty_backlog_id_rejected_for_low_risk_task(self):
+        # Backlog First（2026-07-26 新增）：LOW/MEDIUM/HIGH 任务必须标明来源
+        # Backlog 条目/切片 ID，杜绝"无来源的低价值微优化任务"。
+        data = dict(VALID_TASK)
+        data["backlog_id"] = ""
+        issues = validate_task_payload(data)
+        self.assertTrue(any("backlog_id" in i for i in issues))
+
+    def test_unknown_backlog_id_rejected(self):
+        data = dict(VALID_TASK)
+        data["backlog_id"] = "BL-999-不存在"
+        issues = validate_task_payload(data)
+        self.assertTrue(any("backlog_id" in i for i in issues))
+
+    def test_valid_backlog_id_passes(self):
+        data = dict(VALID_TASK)
+        data["backlog_id"] = "BL-003-1"
+        self.assertEqual(validate_task_payload(data), [])
+
+    def test_backlog_id_not_required_for_done_task(self):
+        data = dict(VALID_TASK)
+        data["risk_level"] = "DONE"
+        data["backlog_id"] = ""
         data["files_allowed"] = []
         data["files_forbidden"] = []
         data["validation_commands"] = []

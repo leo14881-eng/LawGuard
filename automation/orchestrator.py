@@ -48,7 +48,7 @@ if __package__ in (None, ""):
     # `python -m automation.orchestrator` 启动都能正确导入。
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from automation import claude_runner, context_loader, openai_client, progress, security, validator
+from automation import backlog, claude_runner, context_loader, openai_client, progress, security, validator
 from automation import run_lock
 from automation import value_gate
 from automation.config import (
@@ -537,6 +537,33 @@ def run_task_cycle(
         logger.info("候选任务：%s", candidate_task.title)
         logger.info("候选目标：%s", candidate_task.objective)
         logger.info("风险等级：%s", candidate_task.risk_level)
+
+        # Backlog First 强制校验（2026-07-26 新增，见 automation/backlog.py 与
+        # LAWGUARD_SOT.md 第 21 节）：Product Backlog 中存在 READY 且允许 Auto Dev
+        # 的条目时，Planner 不得用 DONE/BLOCKED/NO_HIGH_VALUE_TASK 中任何一种
+        # "没有任务"信号绕过——历史真实案例（Task #14）就是在存在可规划方向的
+        # 情况下被误判为没有任务。命中时不信任 Planner 的自我判断，视为无效响应，
+        # 计入本次已拒绝候选，继续请求下一候选（而不是直接终止运行）。
+        ready_backlog_items = backlog.get_ready_items()
+        if candidate_task.risk_level in ("DONE", "BLOCKED", "NO_HIGH_VALUE_TASK") and ready_backlog_items:
+            ready_ids = "、".join(f"{item.backlog_id}（{item.priority}）" for item in ready_backlog_items)
+            reason = (
+                f"Backlog First 校验未通过：Planner 返回 risk_level={candidate_task.risk_level}，"
+                f"但 Product Backlog 中仍存在 READY 且允许 Auto Dev 的条目（{ready_ids}），必须优先从中"
+                "选择一项，不接受本次响应（见 LAWGUARD_SOT.md 第 21 节 Backlog First 规则）。"
+            )
+            logger.warning("Candidate %d/%d：%s", candidate_number, PLANNER_CANDIDATE_LIMIT, reason)
+            candidate_evaluations.append({
+                "candidate_number": candidate_number, "title": candidate_task.title,
+                "task_category": candidate_task.task_category, "score": None, "passed": False,
+                "reasons": [reason], "repetitive_category": None, "repetitive_count": 0,
+                "duplicate_of_candidate": None,
+            })
+            rejected_candidates.append({
+                "candidate_number": candidate_number, "title": candidate_task.title,
+                "task_category": candidate_task.task_category, "score": None, "reasons": [reason],
+            })
+            continue
 
         if candidate_task.risk_level == "DONE":
             msg = f"规划器判断当前没有更多可安全规划的开发任务，Auto Dev 正常结束。原因：{candidate_task.rationale}"

@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from automation import orchestrator, progress
+from automation import backlog, orchestrator, progress
 from automation.config import Config
 from automation.models import CommandResult, DevelopmentTask, ReviewResult, TokenUsage
 
@@ -122,6 +122,11 @@ class _OrchestratorTestBase(unittest.TestCase):
             mock.patch.object(orchestrator, "REPORTS_DIR", tmp_path / "reports"),
             mock.patch.object(orchestrator, "PROGRESS_FILE", tmp_path / "docs" / "project" / "AUTODEV_PROGRESS.md"),
             mock.patch.object(orchestrator, "load_config", return_value=_fake_config()),
+            # 默认模拟 Backlog 为空（无 READY 条目）：本文件中绝大多数测试关注的是
+            # Attempt/Review/Commit 等与 Backlog 无关的既有机制，使用 DONE/BLOCKED
+            # 结束循环只是测试手法，不应被 2026-07-26 新增的 Backlog First 强制校验
+            # 拦截；专门测试 Backlog First 行为的用例会在各自方法内覆盖此 mock。
+            mock.patch.object(orchestrator.backlog, "get_ready_items", return_value=[]),
         ]
         self._git_service_cls = mock.patch.object(orchestrator, "GitService")
         patches.append(self._git_service_cls)
@@ -704,6 +709,162 @@ class TestBlockedByPlannerSkipsClaude(_OrchestratorTestBase):
         self.assertEqual(exit_code, orchestrator.EXIT_SECURITY_FAILURE)
         mock_run_claude.assert_not_called()
         self.mock_git.commit.assert_not_called()
+
+
+_FAKE_READY_ITEM = backlog.BacklogItem(
+    backlog_id="BL-003", title="本地全文搜索", status="READY", priority="P1", allow_auto_dev=True,
+    user_problem="测试用途", goal="测试用途", core_value="测试用途", scope="测试用途",
+    non_goals="测试用途", risk="测试用途", acceptance_criteria="测试用途", dependencies="无",
+)
+
+
+class TestBacklogFirstEnforcement(_OrchestratorTestBase):
+    """Backlog First 强制校验（2026-07-26 新增，修复 Task #14"存在高价值任务却被
+    误判为没有任务"问题）：Product Backlog 中存在 READY 条目时，Planner 不得用
+    DONE/BLOCKED/NO_HIGH_VALUE_TASK 中任何一种信号绕过。
+    """
+
+    @mock.patch("automation.claude_runner.build_task_prompt")
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_ready_backlog_item_rejects_no_high_value_task_and_selects_backlog_task(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+        mock_build_task_prompt,
+    ):
+        # 场景 1：Backlog 存在 P0 READY 任务时，Planner 第一次误报
+        # NO_HIGH_VALUE_TASK 不应被接受，必须继续请求下一候选，并最终选中一个
+        # 引用了 Backlog ID 的真实任务。get_ready_items 只在 Task #1 的候选检查期间
+        # （前 2 次调用）保持 READY，之后清空——避免 Task #1 提交后 Auto Loop 继续
+        # 进入 Task #2 时，其 DONE 候选又被同一条 Backlog 记录拦下，导致测试需要
+        # 无限提供新的候选（这不是本测试要验证的内容）。
+        call_counter = {"n": 0}
+
+        def _ready_items_side_effect():
+            call_counter["n"] += 1
+            return [_FAKE_READY_ITEM] if call_counter["n"] <= 2 else []
+
+        with mock.patch.object(orchestrator.backlog, "get_ready_items", side_effect=_ready_items_side_effect):
+            wrong_signal = _fake_task(risk_level="NO_HIGH_VALUE_TASK")
+            backlog_task = _fake_scored_task(
+                "新增本地全文搜索功能（BL-003-1：建立内容索引）", value_user=9, value_product=8,
+                task_category="新增功能",
+            )
+            backlog_task.backlog_id = "BL-003-1"
+            mock_plan.side_effect = [
+                (wrong_signal, [_fake_usage()]), _plan_result_for(backlog_task),
+                _plan_result_for(_fake_task(risk_level="DONE")),
+            ]
+            mock_run_claude.return_value = _fake_claude_result()
+            mock_validate.return_value = ([], True)
+            mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+            mock_build_task_prompt.return_value = "prompt"
+
+            exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_plan.call_count, 3)
+        self.mock_git.commit.assert_called_once()
+        _, kwargs = mock_build_task_prompt.call_args
+        self.assertIn("BL-003", kwargs["task_title"])
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_ready_backlog_item_rejects_blocked_signal(
+        self, _ctx, _create_client, mock_plan, mock_run_claude
+    ):
+        with mock.patch.object(orchestrator.backlog, "get_ready_items", return_value=[_FAKE_READY_ITEM]):
+            wrong_blocked = _fake_task(risk_level="BLOCKED")
+            wrong_blocked.rationale = "能力矩阵多数模块已接近饱和，暂无更多可安全推进的任务"
+            mock_plan.side_effect = [(wrong_blocked, [_fake_usage()])] * orchestrator.PLANNER_CANDIDATE_LIMIT
+            exit_code = orchestrator.main([])
+
+        # 3 个候选都被错误地判定为 BLOCKED，但 Backlog 中存在 READY 条目，
+        # 每一个都应被 Backlog First 规则拒绝，最终候选耗尽，不接受为真实 BLOCKED。
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_plan.call_count, orchestrator.PLANNER_CANDIDATE_LIMIT)
+        mock_run_claude.assert_not_called()
+        self.mock_git.commit.assert_not_called()
+
+        run_dirs = list((self.tmp_path / "runtime").iterdir())
+        self.assertEqual(len(run_dirs), 1)
+        report_data = json.loads((run_dirs[0] / "run_report.json").read_text(encoding="utf-8"))
+        evaluations = report_data["candidate_evaluations"]
+        self.assertEqual(len(evaluations), orchestrator.PLANNER_CANDIDATE_LIMIT)
+        for ev in evaluations:
+            self.assertFalse(ev["passed"])
+            self.assertTrue(any("Backlog First" in r for r in ev["reasons"]))
+
+    @mock.patch("automation.claude_runner.build_task_prompt")
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_recent_print_button_repetition_does_not_block_backlog_task(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+        mock_build_task_prompt,
+    ):
+        # 场景 5：最近存在多个 PrintButton 类重复任务，不应影响从 Backlog 选择
+        # 搜索这类全新能力（两者命中完全不同的重复类别，互不干扰）。
+        run_dir = self.tmp_path / "runtime" / "20200101_000000_hist"
+        run_dir.mkdir(parents=True)
+        (run_dir / "task.json").write_text(
+            json.dumps({"title": "Privacy 页面新增打印按钮", "objective": "", "risk_level": "LOW",
+                        "value_user": 8, "value_product": 7, "value_legal": 0, "value_tech_debt": 0,
+                        "repetition_penalty": 0, "maintenance_cost": 0}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        # get_ready_items 只在 Task #1 的候选检查期间（第 1 次调用）保持 READY，
+        # 之后清空，理由同上一个测试。
+        call_counter = {"n": 0}
+
+        def _ready_items_side_effect():
+            call_counter["n"] += 1
+            return [_FAKE_READY_ITEM] if call_counter["n"] <= 1 else []
+
+        with mock.patch.object(orchestrator.backlog, "get_ready_items", side_effect=_ready_items_side_effect):
+            backlog_task = _fake_scored_task(
+                "新增本地全文搜索功能（BL-003-1）", value_user=9, value_product=8, task_category="新增功能",
+            )
+            backlog_task.backlog_id = "BL-003-1"
+            mock_plan.side_effect = [_plan_result_for(backlog_task), _plan_result_for(_fake_task(risk_level="DONE"))]
+            mock_run_claude.return_value = _fake_claude_result()
+            mock_validate.return_value = ([], True)
+            mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+            mock_build_task_prompt.return_value = "prompt"
+
+            exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.mock_git.commit.assert_called_once()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_no_ready_backlog_items_allows_no_high_value_task(
+        self, _ctx, _create_client, mock_plan, mock_run_claude
+    ):
+        # 场景 6：Backlog 中没有任何 READY 条目时（默认 mock 行为），
+        # NO_HIGH_VALUE_TASK 应被正常接受，不受 Backlog First 规则影响。
+        no_task = _fake_task(risk_level="NO_HIGH_VALUE_TASK")
+        mock_plan.return_value = (no_task, [_fake_usage()])
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_plan.call_count, 1)
+        mock_run_claude.assert_not_called()
 
 
 class TestNoHighValueTaskFromPlannerSignal(_OrchestratorTestBase):

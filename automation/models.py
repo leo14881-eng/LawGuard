@@ -60,6 +60,11 @@ class DevelopmentTask:
     why_not_other_candidates: str = ""
     why_not_duplicate: str = ""
     expected_user_benefit: str = ""
+    # Product Backlog 溯源字段（2026-07-26 新增，见 automation/backlog.py 与
+    # LAWGUARD_SOT.md 第 21 节）：LOW/MEDIUM/HIGH 任务必须填写来源 Backlog 条目
+    # ID（如 "BL-003"）或其下某个切片 ID（如 "BL-003-1"），用于杜绝"无来源的
+    # 低价值微优化任务"；DONE/BLOCKED/NO_HIGH_VALUE_TASK 不要求填写。
+    backlog_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)

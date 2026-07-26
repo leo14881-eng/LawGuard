@@ -215,6 +215,11 @@ class TestReleaseOnVariousExitPaths(LockTestCaseBase):
             mock.patch.object(orchestrator, "REPORTS_DIR", runtime_path / "reports"),
             mock.patch.object(orchestrator, "PROGRESS_FILE", runtime_path / "docs" / "project" / "AUTODEV_PROGRESS.md"),
             mock.patch.object(orchestrator, "load_config", return_value=fake_config),
+            # 本文件测的是运行锁的获取/释放时机，与 Backlog First 无关，默认模拟
+            # Backlog 为空，避免真实 Backlog 存在 READY 条目时拦截 DONE/低分场景。
+            # 必须放在 GitService 之前——下方 `started[-1]` 依赖 GitService 是
+            # patches 列表的最后一个元素。
+            mock.patch.object(orchestrator.backlog, "get_ready_items", return_value=[]),
             mock.patch.object(orchestrator, "GitService"),
         ]
         for p in patches:
