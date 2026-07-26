@@ -103,9 +103,15 @@ class RunReport:
     final_status: str
     error_message: str | None
     token_usages: list[TokenUsage] = dataclasses.field(default_factory=list)
-    # Review Retry 记录：LOW Risk 任务在 Review FAIL 后自动重试的每一轮记录
-    # （attempt_number/claude 修复耗时/验证是否通过/评审结论/阻塞问题等），
-    # 第 1 轮（初次执行，非重试）也会记录在内，便于报告完整还原全过程。
+    # Auto Fix Attempt 记录：一个任务从初次执行到最终成功/停止的每一个 Attempt
+    # （INITIAL 初次执行 / VALIDATION_FIX Validation 自动修复 / REVIEW_FIX Review
+    # 自动修复，三者共享同一个最大 Attempt 数）。每项字典包含：
+    # attempt_number、prompt_type、claude_started_at/claude_finished_at/
+    # claude_duration_seconds、changed_files、validation_passed/
+    # validation_duration_seconds、failed_command、review_verdict/review_summary/
+    # blocking_issues/review_duration_seconds、retry_reason、
+    # proceeded_to_next_attempt。字段名沿用早期 Review Retry 阶段的
+    # `review_attempts`，保持与已有报告读取逻辑兼容。
     review_attempts: list[dict[str, Any]] = dataclasses.field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

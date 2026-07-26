@@ -178,6 +178,65 @@ def check_files_lists(files_allowed: list[str], files_forbidden: list[str]) -> l
     return issues
 
 
+# Validation/Review 自动修复（Auto Fix）安全边界：命中任意一项即禁止继续自动重试，
+# 即使任务原始风险等级为 LOW，也必须立即停止并交由人工决策（BLOCKED）。
+# 关键词只扫描"本次改动新增的行"（diff 中以 + 开头的行）与 Claude 执行摘要，
+# 不扫描项目已有代码，避免误伤与本次修复无关的既有内容。
+_FIX_FORBIDDEN_KEYWORDS = [
+    "数据库迁移", "drop table", "alter table", "delete from", "truncate table",
+    "身份认证", "authentication", "authorization", "权限系统", "permission system",
+    "role-based", "rbac", "密钥", "secret key", "secret_key", "api_key", "api key",
+    "password", "支付", "收费", "payment gateway",
+]
+
+# 为让测试/验证"看起来通过"而弱化质量的常见写法，一旦出现在本次修复新增的行中，
+# 视为不安全修复信号（对应 P-1/P0 之外、Auto Fix 自身治理要求的第五类禁止情形）。
+_FIX_TEST_WEAKENING_PATTERNS = [
+    "@ts-ignore", "@ts-nocheck", "eslint-disable", ".skip(", "xit(", "xdescribe(",
+    "it.skip", "describe.skip", "test.skip",
+]
+
+# Claude 在执行摘要中报告"无法安全判断/需要人工决策"时使用的既定约定标记
+# （见 claude_runner.py 的各 Prompt Builder），只要出现即视为需要人工决策。
+_UNSAFE_STDOUT_MARKERS = ["blocked", "需要人工决策", "无法安全判断"]
+
+
+def _added_diff_lines(diff_text: str) -> str:
+    """从 unified diff 中提取本次改动新增的行（以 + 开头，排除 +++ 文件头）。"""
+    lines: list[str] = []
+    for line in (diff_text or "").splitlines():
+        if line.startswith("+++"):
+            continue
+        if line.startswith("+"):
+            lines.append(line[1:])
+    return "\n".join(lines)
+
+
+def detect_unsafe_fix_signal(*, claude_stdout: str, diff_text: str) -> str | None:
+    """检测 Validation/Review 自动修复本轮是否出现禁止继续自动重试的信号。
+
+    命中任意一项时返回中文原因说明（调用方应立即停止、标记 BLOCKED，不得继续重试）；
+    未命中返回 None。这是一个有意保持简单、可解释的关键词/模式黑名单检测，不做语义
+    理解——宁可对可疑内容保守拦截，也不在自动化流水线中静默放行敏感改动。
+    """
+    stdout_lower = (claude_stdout or "").lower()
+    for marker in _UNSAFE_STDOUT_MARKERS:
+        if marker in stdout_lower:
+            return f"Claude 在执行摘要中报告了「{marker}」，视为需要人工决策"
+
+    added_lines_lower = _added_diff_lines(diff_text).lower()
+
+    for keyword in _FIX_FORBIDDEN_KEYWORDS:
+        if keyword in added_lines_lower or keyword in stdout_lower:
+            return f"改动或执行摘要中出现禁止自动修复的敏感内容关键词：{keyword}"
+
+    for pattern in _FIX_TEST_WEAKENING_PATTERNS:
+        if pattern.lower() in added_lines_lower:
+            return f"改动中检测到疑似削弱测试/绕过类型检查的写法：{pattern}"
+
+    return None
+
+
 def redact_secrets(text: str) -> str:
     """对文本中的疑似密钥进行脱敏，用于日志与报告输出。
 

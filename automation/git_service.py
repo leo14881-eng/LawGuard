@@ -52,8 +52,14 @@ class GitService:
     def is_clean(self) -> bool:
         return self.get_status_short().strip() == ""
 
-    def get_diff(self) -> str:
-        return self._run(["diff", "HEAD"]).stdout
+    def get_diff(self, unified: int = 3) -> str:
+        """获取当前任务未提交改动的 Diff（`git diff --no-ext-diff --unified=N HEAD`）。
+
+        使用 `--no-ext-diff` 避免用户本地配置的外部 diff 工具影响输出格式；
+        任务开始前已强制要求工作区干净（见 run_task_cycle 的安全检查），因此本方法
+        在正常 Auto Loop 中天然只包含本任务尚未提交的改动，不包含历史已提交内容。
+        """
+        return self._run(["diff", "--no-ext-diff", f"--unified={unified}", "HEAD"]).stdout
 
     def get_diff_stat(self) -> str:
         return self._run(["diff", "HEAD", "--stat"]).stdout

@@ -24,6 +24,9 @@ _MAX_TREE_FILES = 400
 _MAX_TREE_DEPTH = 6
 _MAX_FIELD_CHARS = 6000
 _MAX_TOTAL_CHARS = 20000
+# Validation/Review Fix Prompt 中"当前任务 Git Diff"小节的字符上限，与其余发送给
+# 模型的上下文使用同一套"明确截断标记、不静默丢弃"的规则（见 build_diff_for_prompt）。
+_MAX_DIFF_PROMPT_CHARS = 8000
 
 # 规划器只需要"当前能做什么、还差什么"这类信息即可决策下一步开发任务；
 # P-1/P0/P1/P2 等最高治理原则已经在 planner_system.txt 中以编号方式引用，
@@ -241,3 +244,43 @@ def build_reviewer_context(
     ]
     context_text = "\n".join(parts)
     return _truncate(context_text, _MAX_TOTAL_CHARS)
+
+
+def truncate_for_prompt(text: str, limit: int = _MAX_FIELD_CHARS) -> str:
+    """公开的文本截断工具，供 orchestrator 构建 Validation/Review Fix Prompt 时复用，
+    与发送给 OpenAI 的上下文使用同一套"超出上限即截断并显式标记"的规则。
+    """
+    return _truncate(text, limit)
+
+
+def build_diff_for_prompt(diff_text: str) -> str:
+    """为 Validation/Review Fix Prompt 准备"当前任务 Git Diff"小节。
+
+    过长时截断，但保留改动文件列表（diff --git 头部行）与正文起始部分，并在截断处
+    显式标记"[Diff 已截断]"，不静默丢弃内容，便于 Claude 判断本次修复的完整改动范围。
+    """
+    if not diff_text or not diff_text.strip():
+        return "（无改动）"
+    if len(diff_text) <= _MAX_DIFF_PROMPT_CHARS:
+        return diff_text
+
+    file_headers = [line for line in diff_text.splitlines() if line.startswith("diff --git ")]
+    file_list_text = "\n".join(file_headers) or "（未解析到文件列表）"
+    body_limit = max(_MAX_DIFF_PROMPT_CHARS - len(file_list_text) - 200, 1000)
+    truncated_body = diff_text[:body_limit]
+    return (
+        f"改动文件列表：\n{file_list_text}\n\n"
+        f"{truncated_body}\n"
+        f"...[Diff 已截断，原始长度 {len(diff_text)} 字符]"
+    )
+
+
+def build_validation_summary_text(validation_results: list[CommandResult]) -> str:
+    """把本轮全部验证命令的结果格式化为简短文本，用于 Fix Prompt 的"其他验证结果"小节。"""
+    if not validation_results:
+        return "（无验证记录）"
+    lines = []
+    for r in validation_results:
+        status = "超时" if r.timed_out else ("通过" if r.exit_code == 0 else "失败")
+        lines.append(f"- {r.command}：{status}（退出码 {r.exit_code}，耗时 {r.duration_seconds:.1f} 秒）")
+    return "\n".join(lines)

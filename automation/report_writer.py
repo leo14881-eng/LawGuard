@@ -149,18 +149,54 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
 
     error_line = f"（错误信息：{report.error_message}）" if report.error_message else ""
 
-    retry_lines: list[str] = []
+    # Attempt 记录：report.review_attempts 中每一项覆盖 INITIAL/VALIDATION_FIX/REVIEW_FIX
+    # 三种 Attempt 类型（字段含义见 automation/models.py 的 RunReport.review_attempts 注释）。
+    attempt_blocks: list[str] = []
+    validation_fix_count = 0
+    review_fix_count = 0
     for entry in report.review_attempts:
-        label = f"Attempt {entry['attempt_number']}" + ("（Retry）" if entry.get("is_retry") else "（初次执行）")
-        verdict = entry.get("review_verdict") or "（评审器未产出有效结论）"
-        validation_text = "PASS" if entry.get("validation_passed") else "FAIL"
-        retry_lines.append(
-            f"- {label}：验证={validation_text}（耗时 {entry.get('validation_duration_seconds', 0.0):.1f} 秒）；"
-            f"Review={verdict}；Claude 修复耗时 {entry.get('claude_duration_seconds', 0.0):.1f} 秒"
+        attempt_prompt_type = entry.get("prompt_type", "INITIAL")
+        if attempt_prompt_type == "VALIDATION_FIX":
+            validation_fix_count += 1
+        elif attempt_prompt_type == "REVIEW_FIX":
+            review_fix_count += 1
+
+        attempt_validation_status = "PASS" if entry.get("validation_passed") else "FAIL"
+        attempt_review_verdict = entry.get("review_verdict") or "（未调用 Review）"
+        attempt_review_duration = entry.get("review_duration_seconds")
+        attempt_review_duration_text = (
+            f"{attempt_review_duration:.1f} 秒" if attempt_review_duration is not None else "（未调用）"
         )
-        if entry.get("blocking_issues"):
-            retry_lines.extend(f"  - 阻塞问题：{i}" for i in entry["blocking_issues"])
-    retry_text = "\n".join(retry_lines) if len(report.review_attempts) > 1 else "（本次未触发 Review Retry）"
+        attempt_changed_files_text = "、".join(entry.get("changed_files") or []) or "（无）"
+        failed_command_text = f"，失败命令：{entry['failed_command']}" if entry.get("failed_command") else ""
+
+        block_lines = [
+            f"### Attempt {entry.get('attempt_number')}",
+            f"- 类型：{attempt_prompt_type}",
+            f"- Claude 耗时：{entry.get('claude_duration_seconds', 0.0):.1f} 秒"
+            f"（{entry.get('claude_started_at', '')} ~ {entry.get('claude_finished_at', '')}）",
+            f"- 改动文件：{attempt_changed_files_text}",
+            f"- Validation：{attempt_validation_status}"
+            f"（耗时 {entry.get('validation_duration_seconds', 0.0):.1f} 秒{failed_command_text}）",
+            f"- Review：{attempt_review_verdict}（耗时 {attempt_review_duration_text}）",
+        ]
+        for issue in entry.get("blocking_issues") or []:
+            block_lines.append(f"  - 阻塞问题：{issue}")
+        block_lines.append(f"- Retry 原因：{entry.get('retry_reason', '（无）')}")
+        attempt_blocks.append("\n".join(block_lines))
+
+    attempts_text = "\n\n".join(attempt_blocks) if attempt_blocks else "（本次未记录任何 Attempt）"
+
+    total_attempts = len(report.review_attempts)
+    attempt_summary_text = (
+        f"- 总 Attempt 数：{total_attempts}\n"
+        f"- Validation Fix 次数：{validation_fix_count}\n"
+        f"- Review Fix 次数：{review_fix_count}\n"
+        f"- 最终状态：{report.final_status}\n"
+        f"- 是否提交：{'是' if report.git_commit else '否'}\n"
+        f"- Commit Hash：{report.git_commit or '（未提交）'}\n"
+        f"- 是否执行 git push：否"
+    )
 
     content = f"""# LawGuard 自动化开发运行报告
 
@@ -208,8 +244,11 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
 ## 14. OpenAI Token 用量
 {_format_token_usages(report.token_usages)}
 
-## 15. Review Retry 记录
-{retry_text}
+## 15. Attempt 记录
+{attempts_text}
+
+## 16. Attempt 总结
+{attempt_summary_text}
 """
     reports_dir.mkdir(parents=True, exist_ok=True)
     path = reports_dir / f"{report.run_id}.md"

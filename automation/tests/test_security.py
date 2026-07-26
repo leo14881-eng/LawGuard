@@ -4,6 +4,7 @@ import unittest
 
 from automation.security import (
     check_files_lists,
+    detect_unsafe_fix_signal,
     is_command_allowed,
     is_safe_declared_forbidden_path,
     is_safe_relative_path,
@@ -172,6 +173,35 @@ class TestSecretRedaction(unittest.TestCase):
         parsed = json.loads(redacted)
         self.assertEqual(parsed["exit_code"], 0)
         self.assertNotIn("thisisasecretkey1234567890", parsed["stdout"])
+
+
+class TestDetectUnsafeFixSignal(unittest.TestCase):
+    """Validation/Review Auto Fix 安全边界：命中即禁止继续自动重试，需人工决策。"""
+
+    def test_normal_fix_is_safe(self):
+        diff = "diff --git a/web/src/x.ts b/web/src/x.ts\n+const a = 1\n"
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout="已修复类型错误。", diff_text=diff))
+
+    def test_claude_self_reported_blocked_is_detected(self):
+        stdout = "执行摘要：BLOCKED：缺少可核验法律来源，无法继续实施。"
+        self.assertIsNotNone(detect_unsafe_fix_signal(claude_stdout=stdout, diff_text=""))
+
+    def test_sensitive_keyword_in_added_diff_lines_is_detected(self):
+        diff = "diff --git a/web/src/x.ts b/web/src/x.ts\n+// 新增身份认证逻辑\n"
+        self.assertIsNotNone(detect_unsafe_fix_signal(claude_stdout="已完成修复。", diff_text=diff))
+
+    def test_sensitive_keyword_in_existing_unchanged_lines_is_not_flagged(self):
+        # 只扫描本次新增的行（+ 开头），不扫描上下文/删除行，避免误伤既有代码。
+        diff = "diff --git a/web/src/x.ts b/web/src/x.ts\n context line about password\n-old password line\n+const b = 2\n"
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout="已完成修复。", diff_text=diff))
+
+    def test_test_weakening_pattern_is_detected(self):
+        diff = "diff --git a/web/src/x.test.ts b/web/src/x.test.ts\n+it.skip('should work', () => {})\n"
+        self.assertIsNotNone(detect_unsafe_fix_signal(claude_stdout="测试已通过。", diff_text=diff))
+
+    def test_ts_ignore_is_detected(self):
+        diff = "diff --git a/web/src/x.ts b/web/src/x.ts\n+// @ts-ignore\n+const c: any = foo()\n"
+        self.assertIsNotNone(detect_unsafe_fix_signal(claude_stdout="类型检查已通过。", diff_text=diff))
 
 
 if __name__ == "__main__":

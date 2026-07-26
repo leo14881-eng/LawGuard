@@ -6,6 +6,7 @@
 """
 import contextlib
 import io
+import itertools
 import tempfile
 import unittest
 from pathlib import Path
@@ -87,6 +88,7 @@ class _OrchestratorTestBase(unittest.TestCase):
         self.mock_git.is_clean.return_value = True
         self.mock_git.get_status_short.return_value = ""
         self.mock_git.get_changed_files.return_value = ["web/src/data/stages.ts"]
+        self.mock_git.get_diff.return_value = ""
         self.mock_git.find_forbidden_violations.return_value = []
         diff_check_result = mock.Mock()
         diff_check_result.returncode = 0
@@ -182,7 +184,9 @@ class TestReviewNotPassBlocksCommit(_OrchestratorTestBase):
 
         exit_code = orchestrator.main([])
 
-        self.assertEqual(exit_code, orchestrator.EXIT_REVIEW_FAILED)
+        # verdict=BLOCKED 代表需要人工决策，与"评审判 FAIL"是两类不同的停止原因，
+        # 使用与 Planner 级 BLOCKED 一致的 EXIT_SECURITY_FAILURE。
+        self.assertEqual(exit_code, orchestrator.EXIT_SECURITY_FAILURE)
         self.mock_git.commit.assert_not_called()
 
 
@@ -197,7 +201,9 @@ class TestValidationFailureBlocksCommit(_OrchestratorTestBase):
     def test_validation_failure_blocks_commit(
         self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude
     ):
-        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
+        # MEDIUM Risk 不满足 Auto Fix 的 LOW Risk 条件，Validation 失败必须立即停止，
+        # 不做自动修复；同时验证 Validation FAIL 时不得调用 Review（避免两套冲突意见）。
+        mock_plan.return_value = _fake_plan_result(risk_level="MEDIUM")
         mock_run_claude.return_value = _fake_claude_result()
         failed_result = CommandResult(
             command="npm run build", cwd="web", exit_code=1, stdout="", stderr="类型错误",
@@ -209,6 +215,138 @@ class TestValidationFailureBlocksCommit(_OrchestratorTestBase):
         exit_code = orchestrator.main([])
 
         self.assertEqual(exit_code, orchestrator.EXIT_VALIDATION_FAILURE)
+        self.assertEqual(mock_run_claude.call_count, 1)
+        mock_review.assert_not_called()
+        self.mock_git.commit.assert_not_called()
+
+
+class TestValidationAutoFixLowRisk(_OrchestratorTestBase):
+    """Validation Auto Fix 回归测试：Build/Test/Type Check 失败时，LOW Risk 任务应自动
+    修复而不是直接停止；MEDIUM Risk 与连续 3 次仍失败时必须停止。"""
+
+    def setUp(self):
+        super().setUp()
+        self.mock_git.get_changed_files.return_value = [
+            "web/src/components/QuickNavCard.vue",
+            "docs/project/AUTODEV_PROGRESS.md",
+        ]
+
+    @staticmethod
+    def _failed_build_result(marker: str = "1") -> tuple[list[CommandResult], bool]:
+        return (
+            [CommandResult(
+                command="npm run build", cwd="web", exit_code=1, stdout="",
+                stderr=f"类型错误 {marker}", duration_seconds=1.0, timed_out=False,
+            )],
+            False,
+        )
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_low_risk_validation_fail_then_pass_retries_and_commits(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        # Attempt 1：Claude 生成的改动导致 npm run build FAIL；
+        # Attempt 2：Claude 根据 Validation Fix Prompt 修复后 Validation PASS + Review PASS。
+        mock_plan.side_effect = [
+            _fake_plan_result(risk_level="LOW"),
+            _fake_plan_result(risk_level="DONE"),
+        ]
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.side_effect = [self._failed_build_result(), ([], True)]
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+        self.mock_git.get_diff.side_effect = (f"diff-{i}" for i in itertools.count(1))
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_run_claude.call_count, 2)
+        # Validation FAIL 的第一轮不调用 Review，只有 Validation PASS 之后才调用一次。
+        self.assertEqual(mock_review.call_count, 1)
+        self.mock_git.commit.assert_called_once()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_low_risk_validation_fail_then_validation_pass_review_fail_then_pass(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        # Attempt 1：Validation FAIL（Validation Fix）；
+        # Attempt 2：Validation PASS 但 Review FAIL（Review Fix）；
+        # Attempt 3：Validation PASS 且 Review PASS → Commit。三者共享同一个 3 次上限。
+        mock_plan.side_effect = [
+            _fake_plan_result(risk_level="LOW"),
+            _fake_plan_result(risk_level="DONE"),
+        ]
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.side_effect = [self._failed_build_result(), ([], True), ([], True)]
+        mock_review.side_effect = [
+            _fake_review_result(verdict="FAIL", safe_to_commit=False),
+            _fake_review_result(verdict="PASS", safe_to_commit=True),
+        ]
+        self.mock_git.get_diff.side_effect = (f"diff-{i}" for i in itertools.count(1))
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_run_claude.call_count, orchestrator.MAX_ATTEMPTS)
+        self.assertEqual(mock_review.call_count, 2)
+        self.mock_git.commit.assert_called_once()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_low_risk_validation_fails_three_times_then_stops(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.side_effect = [
+            self._failed_build_result(marker=str(i)) for i in range(1, orchestrator.MAX_ATTEMPTS + 1)
+        ]
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+        self.mock_git.get_diff.side_effect = (f"diff-{i}" for i in itertools.count(1))
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_VALIDATION_FAILURE)
+        self.assertEqual(mock_run_claude.call_count, orchestrator.MAX_ATTEMPTS)
+        mock_review.assert_not_called()
+        self.mock_git.commit.assert_not_called()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_medium_risk_validation_fail_does_not_retry(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        mock_plan.return_value = _fake_plan_result(risk_level="MEDIUM")
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = self._failed_build_result()
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_VALIDATION_FAILURE)
+        self.assertEqual(mock_run_claude.call_count, 1)
+        mock_review.assert_not_called()
         self.mock_git.commit.assert_not_called()
 
 
@@ -288,16 +426,52 @@ class TestReviewRetryLowRisk(_OrchestratorTestBase):
     def test_low_risk_exhausts_three_attempts_then_stops(
         self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
     ):
+        # 每次 Review 结论的 blocking_issues 都不同，且每次 Git Diff 也不同，确保不会
+        # 触发"无进展保护"提前停止，真正跑满 3 个 Attempt 后再因用尽次数而停止。
         mock_plan.return_value = _fake_plan_result(risk_level="LOW")
         mock_run_claude.return_value = _fake_claude_result()
         mock_validate.return_value = ([], True)
-        mock_review.return_value = _fake_review_result(verdict="FAIL", safe_to_commit=False)
+        mock_review.side_effect = [
+            (
+                ReviewResult(
+                    verdict="FAIL", summary=f"第 {i} 次仍未通过", blocking_issues=[f"问题 {i}"],
+                    non_blocking_suggestions=[], evidence=[], safe_to_commit=False, commit_message="",
+                ),
+                _fake_usage("reviewer"),
+            )
+            for i in range(1, orchestrator.MAX_ATTEMPTS + 1)
+        ]
+        self.mock_git.get_diff.side_effect = (f"diff-{i}" for i in itertools.count(1))
 
         exit_code = orchestrator.main([])
 
         self.assertEqual(exit_code, orchestrator.EXIT_REVIEW_FAILED)
-        self.assertEqual(mock_run_claude.call_count, orchestrator.MAX_REVIEW_ATTEMPTS)
-        self.assertEqual(mock_review.call_count, orchestrator.MAX_REVIEW_ATTEMPTS)
+        self.assertEqual(mock_run_claude.call_count, orchestrator.MAX_ATTEMPTS)
+        self.assertEqual(mock_review.call_count, orchestrator.MAX_ATTEMPTS)
+        self.mock_git.commit.assert_not_called()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_low_risk_no_progress_guard_stops_before_max_attempts(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        # Git Diff 与 Review 结论（verdict + blocking_issues）连续两次完全相同，
+        # 说明修复没有产生实质效果，应在用尽 3 个 Attempt 之前提前停止。
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.return_value = _fake_review_result(verdict="FAIL", safe_to_commit=False)
+        self.mock_git.get_diff.return_value = "同一份 diff"
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_REVIEW_FAILED)
+        self.assertLess(mock_run_claude.call_count, orchestrator.MAX_ATTEMPTS)
         self.mock_git.commit.assert_not_called()
 
     @mock.patch("automation.claude_runner.run_claude")
@@ -318,10 +492,101 @@ class TestReviewRetryLowRisk(_OrchestratorTestBase):
 
         exit_code = orchestrator.main([])
 
-        self.assertEqual(exit_code, orchestrator.EXIT_REVIEW_FAILED)
+        self.assertEqual(exit_code, orchestrator.EXIT_SECURITY_FAILURE)
         self.assertEqual(mock_run_claude.call_count, 1)
         self.assertEqual(mock_review.call_count, 1)
         self.mock_git.commit.assert_not_called()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_review_api_failure_is_not_treated_as_code_fail_and_does_not_retry(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        # Review API 调用失败（这里模拟网络类异常）与代码 Review FAIL 是两类不同的
+        # 失败：前者没有结构化的修复依据，不应被当作可自动修复的 LOW Risk 问题重试。
+        mock_plan.return_value = _fake_plan_result(risk_level="LOW")
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.side_effect = ConnectionError("网络暂时不可用")
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_GENERAL_FAILURE)
+        self.assertEqual(mock_run_claude.call_count, 1)
+        self.mock_git.commit.assert_not_called()
+
+    @mock.patch("automation.claude_runner.build_review_fix_prompt")
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_review_fix_prompt_includes_blocking_issues_and_git_diff(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+        mock_build_review_fix_prompt,
+    ):
+        mock_plan.side_effect = [
+            _fake_plan_result(risk_level="LOW"),
+            _fake_plan_result(risk_level="DONE"),
+        ]
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.side_effect = [
+            _fake_review_result(verdict="FAIL", safe_to_commit=False),
+            _fake_review_result(verdict="PASS", safe_to_commit=True),
+        ]
+        self.mock_git.get_diff.return_value = "diff --git a/x b/x\n+ 修复内容"
+        mock_build_review_fix_prompt.return_value = "fix prompt"
+
+        orchestrator.main([])
+
+        mock_build_review_fix_prompt.assert_called_once()
+        _, kwargs = mock_build_review_fix_prompt.call_args
+        self.assertEqual(kwargs["blocking_issues"], [])
+        self.assertIn("diff --git a/x b/x", kwargs["git_diff_text"])
+
+    @mock.patch("automation.claude_runner.build_validation_fix_prompt")
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_validation_fix_prompt_includes_failure_output_and_git_diff(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+        mock_build_validation_fix_prompt,
+    ):
+        mock_plan.side_effect = [
+            _fake_plan_result(risk_level="LOW"),
+            _fake_plan_result(risk_level="DONE"),
+        ]
+        mock_run_claude.return_value = _fake_claude_result()
+        failed_result = CommandResult(
+            command="npm run build", cwd="web", exit_code=1, stdout="编译输出",
+            stderr="类型错误：Type 'string' is not assignable", duration_seconds=1.0, timed_out=False,
+        )
+        mock_validate.side_effect = [([failed_result], False), ([], True)]
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+        self.mock_git.get_diff.return_value = "diff --git a/x b/x\n+ 有类型错误的改动"
+        mock_build_validation_fix_prompt.return_value = "fix prompt"
+
+        orchestrator.main([])
+
+        mock_build_validation_fix_prompt.assert_called_once()
+        _, kwargs = mock_build_validation_fix_prompt.call_args
+        self.assertEqual(kwargs["failed_command"], "npm run build")
+        self.assertIn("类型错误", kwargs["stderr"])
+        self.assertIn("diff --git a/x b/x", kwargs["git_diff_text"])
+        # Validation FAIL 的这一轮不应调用 Review。
+        mock_review.assert_called_once()
 
 
 class TestClaudeFailureBlocksValidationAndCommit(_OrchestratorTestBase):

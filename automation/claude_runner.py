@@ -84,42 +84,68 @@ def build_task_prompt(
 """
 
 
-def build_fix_prompt(
+def build_validation_fix_prompt(
     *,
     task_title: str,
+    task_objective: str,
     scope: str,
     files_allowed: list[str],
     files_forbidden: list[str],
-    review_summary: str,
-    blocking_issues: list[str],
-    non_blocking_suggestions: list[str],
+    risk_level: str,
+    attempt_number: int,
+    max_attempts: int,
+    failed_command: str,
+    exit_code: int,
+    stdout: str,
+    stderr: str,
+    validation_results_text: str,
+    git_diff_text: str,
 ) -> str:
-    """构建 Review Retry 阶段下发给 Claude Code 的"仅修复评审问题"Prompt（全部使用中文）。
+    """构建 Validation Fix Attempt 下发给 Claude Code 的"仅修复验证失败"Prompt（全部使用中文）。
 
-    只用于 LOW Risk 任务在 Review FAIL 后的自动重试：严格限定为"只修复评审指出的问题"，
-    不重新规划任务、不改变任务目标、不新增功能、不扩大修改范围，交由流水线重新验证。
+    只用于 LOW Risk 任务在 git diff --check / 类型检查 / 测试 / Build / 任务附加验证命令
+    失败后的自动修复：严格限定为"只修复本次验证失败"，不得删除/跳过/弱化测试、不得用
+    any/@ts-ignore/setTimeout 等方式掩盖问题，交由流水线重新执行完整验证。
     """
     allowed_text = "\n".join(f"- {f}" for f in files_allowed) or "（无）"
     forbidden_text = "\n".join(f"- {f}" for f in files_forbidden) or "（无）"
-    blocking_text = "\n".join(f"- {i}" for i in blocking_issues) or "（无）"
-    suggestions_text = "\n".join(f"- {s}" for s in non_blocking_suggestions) or "（无）"
 
-    return f"""你正在为"法护（LawGuard）"项目的自动化开发任务执行一次 Review Retry 修复。
+    return f"""你正在为"法护（LawGuard）"项目的自动化开发任务执行一次 Validation Fix 修复。
 
-【原任务标题】
+本次自动验证未通过。
+
+当前任务：
 {task_title}
 
-【原任务范围（不得扩大或改变）】
+任务目标：
+{task_objective}
+
+任务范围（不得扩大或改变）：
 {scope}
 
-【本次 Code Review 未通过】
-评审摘要：{review_summary}
+风险等级：
+{risk_level}
 
-Blocking Issues：
-{blocking_text}
+当前 Attempt：
+{attempt_number} / {max_attempts}
 
-非阻塞建议（可参考，不强制）：
-{suggestions_text}
+失败命令：
+{failed_command}
+
+退出码：
+{exit_code}
+
+标准输出：
+{stdout}
+
+错误输出：
+{stderr}
+
+其他验证结果：
+{validation_results_text}
+
+当前任务 Git Diff：
+{git_diff_text}
 
 【允许修改的文件（与原任务一致，不得扩大）】
 {allowed_text}
@@ -127,16 +153,99 @@ Blocking Issues：
 【禁止修改的文件】
 {forbidden_text}
 
-【强制要求，必须严格遵守】
-1. 只修复上方 Blocking Issues 指出的问题，不得修改无关代码。
-2. 不得重新规划任务，不得改变原任务目标与范围。
-3. 不得新增额外功能，不得修改产品设计。
-4. 不得修改法律内容（如涉及法律内容问题，直接在执行摘要中报告 BLOCKED，不得自行编造或推断）。
-5. 严格只修改"允许修改的文件"范围内的内容，绝不触碰"禁止修改的文件"。
-6. 不得访问或修改本项目目录之外的任何文件、目录。
-7. 修复完成后立即结束，由流水线自动重新执行构建/测试与评审，不需要你自行判断是否通过。
-8. 最后用简体中文简短说明本次修复了什么，不要展开无关分析。
-9. 不要执行 git commit，不要执行 git push。
+【要求，必须严格遵守】
+1. 仅修复上述验证失败，不得修改无关代码。
+2. 不重新规划任务，不改变任务目标或验收条件。
+3. 不新增功能，不修改产品设计。
+4. 不修改无关文件。
+5. 不修改法律内容（如涉及法律内容问题，直接在执行摘要中报告 BLOCKED，不得自行编造或推断）。
+6. 不得删除、跳过或弱化测试（禁止 .skip/xit/xdescribe/降低断言强度/注释掉功能）。
+7. 不得使用 any、@ts-ignore、@ts-nocheck、setTimeout 等方式掩盖问题、隐藏错误。
+8. 不得修改原任务验收标准，不得删除 Review 阻塞项对应的功能代码。
+9. 保留当前已有的有效改动。
+10. 严格只修改"允许修改的文件"范围内的内容，绝不触碰"禁止修改的文件"。
+11. 不得访问或修改本项目目录之外的任何文件、目录。
+12. 修复完成后立即结束，由流水线自动重新执行完整验证，不需要你自行判断是否通过。
+13. 最后用简体中文简短说明本次修复了什么，不要展开无关分析。
+14. 不要执行 git commit，不要执行 git push。
+"""
+
+
+def build_review_fix_prompt(
+    *,
+    task_title: str,
+    task_objective: str,
+    scope: str,
+    files_allowed: list[str],
+    files_forbidden: list[str],
+    attempt_number: int,
+    max_attempts: int,
+    review_summary: str,
+    blocking_issues: list[str],
+    non_blocking_suggestions: list[str],
+    validation_results_text: str,
+    git_diff_text: str,
+) -> str:
+    """构建 Review Fix Attempt 下发给 Claude Code 的"仅修复评审问题"Prompt（全部使用中文）。
+
+    只用于 LOW Risk 任务在 Review FAIL 后的自动修复：严格限定为"只修复评审指出的问题"，
+    不重新规划任务、不改变任务目标、不新增功能、不扩大修改范围，交由流水线重新验证。
+    """
+    allowed_text = "\n".join(f"- {f}" for f in files_allowed) or "（无）"
+    forbidden_text = "\n".join(f"- {f}" for f in files_forbidden) or "（无）"
+    blocking_text = "\n".join(f"- {i}" for i in blocking_issues) or "（无）"
+    suggestions_text = "\n".join(f"- {s}" for s in non_blocking_suggestions) or "（无）"
+
+    return f"""你正在为"法护（LawGuard）"项目的自动化开发任务执行一次 Review Fix 修复。
+
+本次 Code Review 未通过。
+
+当前任务：
+{task_title}
+
+任务目标：
+{task_objective}
+
+任务范围（不得扩大或改变）：
+{scope}
+
+当前 Attempt：
+{attempt_number} / {max_attempts}
+
+Review Summary：
+{review_summary}
+
+Blocking Issues：
+{blocking_text}
+
+Non-blocking Suggestions：
+{suggestions_text}
+
+最近验证结果：
+{validation_results_text}
+
+当前任务 Git Diff：
+{git_diff_text}
+
+【允许修改的文件（与原任务一致，不得扩大）】
+{allowed_text}
+
+【禁止修改的文件】
+{forbidden_text}
+
+【要求，必须严格遵守】
+1. 只修复 Blocking Issues 指出的问题，不得修改无关代码。
+2. Non-blocking Suggestions 仅在不扩大修改范围时可以顺手处理，不强制。
+3. 不重新规划任务，不改变任务目标或验收条件。
+4. 不新增功能，不修改产品设计。
+5. 不修改无关文件。
+6. 不修改法律内容（如涉及法律内容问题，直接在执行摘要中报告 BLOCKED，不得自行编造或推断）。
+7. 不得删除、跳过或弱化测试，不得用 any/@ts-ignore/setTimeout 等方式掩盖问题。
+8. 严格只修改"允许修改的文件"范围内的内容，绝不触碰"禁止修改的文件"。
+9. 不得访问或修改本项目目录之外的任何文件、目录。
+10. 修复完成后立即结束，由流水线自动重新执行完整验证和评审，不需要你自行判断是否通过。
+11. 最后用简体中文简短说明本次修复了什么，不要展开无关分析。
+12. 不要执行 git commit，不要执行 git push。
 """
 
 
