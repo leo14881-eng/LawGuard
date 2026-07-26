@@ -178,15 +178,48 @@ def check_files_lists(files_allowed: list[str], files_forbidden: list[str]) -> l
     return issues
 
 
-# Validation/Review 自动修复（Auto Fix）安全边界：命中任意一项即禁止继续自动重试，
-# 即使任务原始风险等级为 LOW，也必须立即停止并交由人工决策（BLOCKED）。
-# 关键词只扫描"本次改动新增的行"（diff 中以 + 开头的行）与 Claude 执行摘要，
-# 不扫描项目已有代码，避免误伤与本次修复无关的既有内容。
+# 【2026-07-26 修复】Task #8（Privacy 页面新增打印按钮）真实误判：Claude
+# 因为 Bash 工具需要审批、暂时无法执行 `npm run build`，在执行摘要里写"命令被
+# 权限系统拦截，需要你手动批准后我才能继续执行验证"——这里的"权限系统"指
+# Claude Code 自身的工具审批沙箱，与本项目要不要实现用户登录/角色权限系统
+# 毫无关系；实际代码 Diff 只是新增两行"引入并渲染 PrintPageButton"，不含任何
+# 敏感内容。旧逻辑对 `added_lines_lower`（Diff 新增行）和 `stdout_lower`
+# （Claude 执行摘要）两处都做关键词包含判断，导致 Claude 在摘要里提到自己的
+# 工具权限受限、或以否定句提到某个词时也会被误伤。
+#
+# 修复：安全停止必须基于"Diff 里真实发生的代码行为"，不能基于 Claude 用自然
+# 语言怎么描述这件事——本类关键词现在只扫描 Diff 新增行，不再扫描 Claude 执行
+# 摘要；任务描述（DevelopmentTask 的 title/objective/scope 等）从未参与本类
+# 扫描（detect_unsafe_fix_signal 的入参本就只有 claude_stdout 与 diff_text，
+# 不接收任务对象），只用于人类理解任务，不作为阻塞证据。Claude 摘要唯一还能
+# 触发停止的路径是上面的 _EXPLICIT_HUMAN_BLOCK_PHRASES（明确表达"需要人工
+# 决策"意图的完整短语），与这里的关键词表相互独立。
+#
+# 关键词/模式本身仍然只保持简单、可解释的黑名单，但收紧为具体的 API 名称/
+# 组合短语，避免用会在正常代码里频繁出现的孤立单词（例如本项目 CSS 里到处
+# 都是"Design Token"、无障碍属性里到处都是 `role="listitem"`，如果收录裸词
+# "token"/"role" 会把几乎所有页面改动都误伤）。
 _FIX_FORBIDDEN_KEYWORDS = [
+    # 数据库迁移/删除数据（本项目无数据库，出现即视为异常）
     "数据库迁移", "drop table", "alter table", "delete from", "truncate table",
-    "身份认证", "authentication", "authorization", "权限系统", "permission system",
-    "role-based", "rbac", "密钥", "secret key", "secret_key", "api_key", "api key",
-    "password", "支付", "收费", "payment gateway",
+    # 新增或修改登录认证逻辑
+    "身份认证", "authentication", "authorization", "password hash", "password_hash",
+    # 新增或修改角色、权限、授权判断
+    "权限系统", "permission system", "role-based", "rbac", "acl", "haspermission",
+    "has_permission", "hasrole", "has_role", "checkpermission", "check_permission",
+    "isadmin", "is_admin", "grantaccess", "grant_access",
+    # 修改路由守卫（Vue Router 具体 API，不是泛泛的"路由"一词）
+    "router.beforeeach", "router.beforeresolve", "beforeenter", "beforerouteenter",
+    "navigation guard",
+    # 中间件（本项目为纯静态 SPA，无后端/中间件，出现即视为异常）
+    "middleware",
+    # token/session/cookie 安全逻辑（用具体组合短语，不用会在正常代码里出现的
+    # 裸词 "token"/"session"/"cookie"）
+    "access_token", "access token", "auth_token", "auth token", "session_token",
+    "csrf_token", "csrf token", "document.cookie", "set-cookie", "jwt.sign", "jsonwebtoken",
+    # 密钥/支付
+    "密钥", "secret key", "secret_key", "api_key", "api key", "password",
+    "支付", "收费", "payment gateway",
 ]
 
 # 为让测试/验证"看起来通过"而弱化质量的常见写法，一旦出现在本次修复新增的行中，
@@ -293,6 +326,14 @@ def detect_unsafe_fix_signal(*, claude_stdout: str, diff_text: str) -> str | Non
     单词做裸词包含判断，避免把"no blockers""not blocked"等否定语境或
     "验证结果：BLOCKED——因权限受限无法执行验证命令"这类工具/环境限制说明误判为
     需要人工做产品/法律/安全决策。
+
+    敏感关键词/危险修复写法两类检测（见 _FIX_FORBIDDEN_KEYWORDS /
+    _FIX_TEST_WEAKENING_PATTERNS 上方注释）只扫描 Diff 新增行，不扫描 Claude
+    执行摘要——安全停止必须基于"代码里真实发生了什么"，不是"Claude 用自然语言
+    怎么描述这件事"；Claude 摘要在提到自己工具受限、或以否定句提到某个敏感词时
+    （例如 Task #8"命令被权限系统拦截"，指 Claude Code 自身的工具审批沙箱，与
+    应用本身要不要做权限系统无关）都不应触发。任务描述（DevelopmentTask）从未
+    参与这两类扫描，本函数入参本就不接收任务对象。
     """
     stdout_lower = (claude_stdout or "").lower()
 
@@ -303,8 +344,8 @@ def detect_unsafe_fix_signal(*, claude_stdout: str, diff_text: str) -> str | Non
     added_lines_lower = _added_diff_lines(diff_text).lower()
 
     for keyword in _FIX_FORBIDDEN_KEYWORDS:
-        if keyword in added_lines_lower or keyword in stdout_lower:
-            return f"改动或执行摘要中出现禁止自动修复的敏感内容关键词：{keyword}"
+        if keyword in added_lines_lower:
+            return f"本次改动新增的代码中出现禁止自动修复的敏感内容关键词：{keyword}"
 
     for pattern in _FIX_TEST_WEAKENING_PATTERNS:
         if pattern.lower() in added_lines_lower:

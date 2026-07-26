@@ -275,5 +275,120 @@ class TestDetectUnsafeFixSignalBlockedPhraseMatching(unittest.TestCase):
         self.assertIsNotNone(detect_unsafe_fix_signal(claude_stdout=stdout, diff_text=""))
 
 
+class TestSensitiveKeywordScanIsDiffOnly(unittest.TestCase):
+    """2026-07-26 修复：Task #8（Privacy 页面新增打印按钮）真实误判：Claude 因
+    Bash 工具需要审批、暂时无法执行 npm run build，在执行摘要里写"命令被权限
+    系统拦截"——这里"权限系统"指 Claude Code 自身的工具审批沙箱，与应用本身
+    要不要做用户权限系统毫无关系；实际 Diff 只新增了两行渲染 PrintPageButton
+    的代码，不含任何敏感内容。旧逻辑对 Diff 新增行和 Claude 执行摘要两处都做
+    关键词包含判断，这里验证：改为只扫描 Diff 后，摘要/任务描述里出现敏感词
+    不再触发；Diff 里真实发生高风险代码行为时仍然可靠拦截。
+    """
+
+    _PRIVACY_DIFF = (
+        "diff --git a/web/src/views/PrivacyView.vue b/web/src/views/PrivacyView.vue\n"
+        "--- a/web/src/views/PrivacyView.vue\n"
+        "+++ b/web/src/views/PrivacyView.vue\n"
+        "@@ -1,10 +1,15 @@\n"
+        " <script setup lang=\"ts\">\n"
+        " import PageHeader from '../components/PageHeader.vue'\n"
+        "+import PrintPageButton from '../components/PrintPageButton.vue'\n"
+        " </script>\n"
+        " \n"
+        " <template>\n"
+        "   <div class=\"container section\">\n"
+        "-    <PageHeader title=\"隐私说明\" />\n"
+        "+    <PageHeader title=\"隐私说明\">\n"
+        "+      <template #actions>\n"
+        "+        <PrintPageButton page-title=\"隐私说明 - 法护 LawGuard\" />\n"
+        "+      </template>\n"
+        "+    </PageHeader>\n"
+    )
+
+    # ---- Claude 摘要 / 任务描述里出现敏感词：不得阻塞 ----
+    def test_privacy_page_wording_with_permission_system_is_not_blocked(self):
+        # 页面正文本身讨论"权限系统"这类话题（例如隐私说明里提到"不涉及权限系统"）
+        # 属于普通文案，不是代码行为。
+        stdout = "本页面为纯静态说明文字，未涉及权限系统或任何后端逻辑。"
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout=stdout, diff_text=self._PRIVACY_DIFF))
+
+    def test_claude_summary_negating_permission_system_is_not_blocked(self):
+        stdout = "本次改动未修改权限系统，仅新增打印按钮。"
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout=stdout, diff_text=self._PRIVACY_DIFF))
+
+    def test_claude_summary_mentioning_own_tool_permission_is_not_blocked(self):
+        # 本次真实事故的原始措辞：Claude 描述的是它自己的工具审批沙箱，不是
+        # 应用要不要做用户权限系统。
+        stdout = (
+            "已完成代码改动：在 web/src/views/PrivacyView.vue 中引入 PrintPageButton 组件。\n"
+            "尚未执行 npm run build：命令被权限系统拦截，需要你手动批准后我才能继续执行验证。"
+        )
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout=stdout, diff_text=self._PRIVACY_DIFF))
+
+    def test_task_description_is_never_scanned(self):
+        # detect_unsafe_fix_signal 的入参本就不接收任务对象，这里用一段"如果被
+        # 当成敏感文本会触发"的字符串验证：即使拼进 stdout 也不该命中关键词表
+        # （因为关键词现在只扫描 diff_text，不扫描 stdout），确认任务描述类
+        # 自然语言文本不会被当作阻塞证据。
+        task_like_text = "任务背景：本项目此前评估过权限系统与身份认证方案，本次任务与其无关。"
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout=task_like_text, diff_text=self._PRIVACY_DIFF))
+
+    def test_diff_with_only_print_button_is_not_blocked(self):
+        self.assertIsNone(
+            detect_unsafe_fix_signal(claude_stdout="已完成，构建通过。", diff_text=self._PRIVACY_DIFF)
+        )
+
+    # ---- Diff 真实发生高风险代码行为：必须阻塞 ----
+    def test_diff_adding_role_permission_check_is_blocked(self):
+        diff = (
+            "diff --git a/web/src/utils/auth.ts b/web/src/utils/auth.ts\n"
+            "+export function hasPermission(user: User, action: string): boolean {\n"
+            "+  return checkPermission(user.role, action)\n"
+            "+}\n"
+        )
+        result = detect_unsafe_fix_signal(claude_stdout="已完成权限判断逻辑。", diff_text=diff)
+        self.assertIsNotNone(result)
+
+    def test_diff_modifying_router_guard_is_blocked(self):
+        diff = (
+            "diff --git a/web/src/router/index.ts b/web/src/router/index.ts\n"
+            "+router.beforeEach((to, from, next) => {\n"
+            "+  if (!isLoggedIn()) return next('/login')\n"
+            "+  next()\n"
+            "+})\n"
+        )
+        result = detect_unsafe_fix_signal(claude_stdout="已完成路由鉴权。", diff_text=diff)
+        self.assertIsNotNone(result)
+
+    def test_diff_modifying_token_session_logic_is_blocked(self):
+        diff = (
+            "diff --git a/web/src/utils/auth.ts b/web/src/utils/auth.ts\n"
+            "+document.cookie = `access_token=${token}; path=/`\n"
+        )
+        result = detect_unsafe_fix_signal(claude_stdout="已完成登录态存储。", diff_text=diff)
+        self.assertIsNotNone(result)
+
+    def test_explicit_needs_human_decision_on_permission_model_is_blocked(self):
+        stdout = "存在多种权限模型可选，需要人工决策权限模型。"
+        result = detect_unsafe_fix_signal(claude_stdout=stdout, diff_text="")
+        self.assertIsNotNone(result)
+
+    # ---- 本次 Task #8 真实事故复现：不得再误判 ----
+    def test_real_task8_claude_output_is_not_blocked(self):
+        real_stdout = (
+            "The build command keeps getting blocked pending approval and I shouldn't "
+            "keep re-issuing the identical call. I need your confirmation to run the "
+            "verification build.\n\n"
+            "**请确认：是否允许我执行 `npm run build`（在 `web/` 目录下）以验证本次改动？**\n\n"
+            "同时说明当前进度：\n\n"
+            "- 已完成代码改动：在 `web/src/views/PrivacyView.vue` 中引入 `PrintPageButton` "
+            "组件，并在 `PageHeader` 的 `#actions` 插槽中渲染\"打印本页\"按钮，`page-title` "
+            "设为\"隐私说明 - 法护 LawGuard\"，写法与 `OfficialChannelsView.vue` 完全一致。\n"
+            "- 尚未执行 `npm run build`：命令被权限系统拦截，需要你手动批准后我才能继续"
+            "执行验证。"
+        )
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout=real_stdout, diff_text=self._PRIVACY_DIFF))
+
+
 if __name__ == "__main__":
     unittest.main()
