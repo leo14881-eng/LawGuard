@@ -4,10 +4,11 @@
 LawGuard V1 —— Auto Dev 全自动开发循环
 
 ## Last Update
-2026-07-26T05:13:18
+2026-07-26T11:40:00
 
 ## Last Commit
-AutoDev(task-003): feat: 首页新增 QuickNavCard 快速导航区块并嵌入 HomeView，链接至 /official-chan
+（本次人工会话尚未提交，见下方"P0.2 收尾"记录；此前一次 Auto Dev 自动提交为
+task-003: feat: 首页新增 QuickNavCard 快速导航区块并嵌入 HomeView，链接至 /official-chan）
 
 ## Completed Tasks
 - task-001: 在法律来源页面完善官方来源展示顺序与无障碍性，显示版本记录信息并复用现有组件与设计令牌
@@ -60,6 +61,13 @@ AutoDev(task-003): feat: 首页新增 QuickNavCard 快速导航区块并嵌入 H
 | 本地全文搜索（V1 功能范围第 7 项） | PLANNED | — | — | — | 仅 `AppEmptyState.vue` 注释提及"未来的本地全文搜索功能"，无实际实现 |
 | 首页信息层级重设计 | VERIFIED | `HomeView.vue`/`HeroSection.vue`/`TrustBanner.vue`/`QuickNavCard.vue`/`AppFooter.vue` | 29 个前端测试通过；`npm run build` 通过；桌面 1440/平板 768/移动 375 三档 Playwright 截图确认无横向滚动、标题无孤字换行、Hero 在平板正确切换上下布局 | 2026-07-26 | Trust Banner 由大黄框改为紧凑单行+可展开；Hero 改左右两栏；新增 4 张任务卡替代原快速导航；移除首页重复的紧急指引 CTA 大卡片 |
 | 全站 Design System 审计与组件统一 | VERIFIED（审计范围内的 10 项发现已处理完成；未展开的部分见备注） | 审计发现见本次会话记录；修复：`style.css` 新增 `--header-height` 与全局 `.lead` 类、删除零引用的 `FeatureCard.vue`、`StageCard.vue`/`ChannelCard.vue` 改用 `.card--interactive` 与既有 Token、`StagesView`/`DocumentsView`/`OfficialChannelsView`/`AboutView`/`EmergencyGuideView`/`PrivacyView` 统一改用 `PageHeader`、`AboutView` 免责声明与 `LegalDisclaimer` 合并去重、`NoticeBanner` 纯状态说明由 caution 改为 info | `npm run build`/`npm run test`（29 项）通过；桌面/移动端 6 个页面 Playwright 截图人工检查 | 2026-07-26 | 未做的部分（保留为待办，未强行推进）：未对每种"页面类型"建立独立骨架模板文件，仅在 LAWGUARD_SOT.md 12.3 节做文字规范；ComingSoonView 的少量魔法数（`80px 20px`）未处理，风险低、未纳入本轮 |
+| ComingSoon 占位页 | REJECTED（已删除，功能被诉讼阶段详情页取代） | 原 `web/src/views/ComingSoonView.vue` 与 `/coming-soon` 路由已删除，`robots.txt` 同步移除对应 Disallow 规则 | `npm run build`/`npm run test` 通过；Playwright 39 项页面×视口检查无残留引用 | 2026-07-26 | 原"魔法数 `80px 20px`"已知问题随文件删除一并消除 |
+| 诉讼阶段详情页 | VERIFIED | `web/src/views/StageDetailView.vue`（路由 `/stages/:id`）+ `data/stages.ts` 扩展字段（`whatIsThisStage`/`whatGenerallyHappens`/`familyFocus`/`generalRights`/`nextSteps`/`legalSourceIds`）；`StageCard.vue` 改为跳转详情页 | `vue-tsc -b`/`npm run test`（29 项）/`npm run build` 通过；Playwright 桌面/平板/移动三档截图人工检查 6 个阶段详情、返回链接、打印按钮 | 2026-07-26 | 内容为一般性表述，统一标注"待法律复核"，不引用具体法条编号/期限，官方来源沿用 `legal_sources.ts` 既有"待核验"条目 |
+| 权利指引（独立模块） | VERIFIED | 新增 `data/rightsGuide.ts`、`components/RightsGuideCard.vue`、`views/RightsGuideView.vue`（`/rights-guide`）、`views/RightsGuideDetailView.vue`（`/rights-guide/:id`）；与"诉讼阶段"模块页面/路由/内容完全独立，两侧详情页互相链接但不重复正文 | 同上 | 2026-07-26 | 修复历史遗留问题：`AppHeader` 导航"权利指引"此前误指向 `/stages`，`QuickNavCard`"想了解当前权利"此前指向不存在的 `/rights-guide`（悬空链接），均已修复为正确路由 |
+| 统一详情页模板 | VERIFIED | 新增 `components/DetailPageLayout.vue`（PageHeader→关键结论→正文→下一步→官方来源→打印→边界说明→返回），供诉讼阶段详情与权利指引详情复用 | 同上 | 2026-07-26 | — |
+| 路由懒加载 loading 状态 | VERIFIED | `App.vue` 的 `<RouterView>` 改为 `v-slot` + `<Suspense>`，`fallback` 复用既有 `AppLoading.vue` | Playwright 检查无控制台报错；人工验证刷新/切页不再出现内容区空白导致 Footer 瞬间贴近 Header 的跳动 | 2026-07-26 | 对应 P3.4"页面须覆盖 loading 状态"要求，此前遗漏 |
+| 首页"使用边界"窄栏孤字换行 | VERIFIED | `HomeView.vue` `.boundary__lead` 移除仅适用于桌面双栏布局的 `max-width:320px`，改用 `text-wrap: balance` | Playwright 桌面/平板截图确认不再出现"…不能提供 / 什么。"两字孤行 | 2026-07-26 | — |
+| 紧急指引第一步提示语拆词 | VERIFIED | `EmergencyGuideView.vue` "不要混用"用 `.text-keep` 包裹，避免"不/要混用"跨行拆词 | 同上 | 2026-07-26 | — |
 
 ### 重复实现检查结果（本次设计审计，2026-07-26）
 

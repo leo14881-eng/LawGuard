@@ -18,6 +18,21 @@ const router = createRouter({
       component: () => import('../views/StagesView.vue'),
     },
     {
+      path: '/stages/:id',
+      name: 'stage-detail',
+      component: () => import('../views/StageDetailView.vue'),
+    },
+    {
+      path: '/rights-guide',
+      name: 'rights-guide',
+      component: () => import('../views/RightsGuideView.vue'),
+    },
+    {
+      path: '/rights-guide/:id',
+      name: 'rights-guide-detail',
+      component: () => import('../views/RightsGuideDetailView.vue'),
+    },
+    {
       path: '/documents',
       name: 'documents',
       component: () => import('../views/DocumentsView.vue'),
@@ -53,13 +68,7 @@ const router = createRouter({
       component: () => import('../views/EmergencyGuideView.vue'),
     },
     {
-      path: '/coming-soon',
-      name: 'coming-soon',
-      component: () => import('../views/ComingSoonView.vue'),
-    },
-    {
-      // 真正未匹配到任何已知路径时展示 404 页面；与 /coming-soon（站内已知链接
-      // 指向的"待开放"内容占位页）含义不同，不合并使用。
+      // 未匹配到任何已知路径时展示 404 页面。
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('../views/NotFoundView.vue'),

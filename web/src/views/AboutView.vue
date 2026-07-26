@@ -57,7 +57,7 @@ const fraudBehaviors = [
     <section class="section">
       <h2>谁在使用 LawGuard</h2>
       <p class="lead">
-        考虑到被拘留、逮捕或羁押的当事人通常无法自由使用手机或访问互联网，法护的直接访问者主要是：
+        考虑到被拘留、逮捕或羁押的当事人通常无法自由使用手机或访问互联网，法护的直接访问者<span class="text-keep">主要是：</span>
       </p>
       <ul>
         <li>刑事案件当事人的家属；</li>

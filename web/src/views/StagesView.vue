@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import StageCard from '../components/StageCard.vue'
-import NoticeBanner from '../components/NoticeBanner.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PrintPageButton from '../components/PrintPageButton.vue'
 import PrintFooter from '../components/PrintFooter.vue'
@@ -26,9 +25,7 @@ import { stages } from '../data/stages'
 
     <TrustBanner variant="compact" />
 
-    <NoticeBanner tone="info" title="内容状态说明">
-      <p>各阶段详情内容正在依据公开有效法律文件整理，完成法律复核后陆续开放。</p>
-    </NoticeBanner>
+    <p class="status-note">各阶段详情为一般性表述，尚未经过执业律师逐条核验，统一标注"待法律复核"。</p>
 
     <div class="grid grid-3 stages-grid">
       <StageCard v-for="stage in stages" :key="stage.id" :stage="stage" />

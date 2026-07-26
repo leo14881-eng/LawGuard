@@ -15,6 +15,15 @@
   --color-border: #d9e2ec;
   --color-border-strong: #b9c7d6;
 
+  /* 行动色（方案 A · 可信公益型）：CTA 按钮与品牌主色统一使用同一套深蓝，
+     不引入额外的高饱和度蓝，保持"平和、可信"的整体基调。 */
+  --color-action: var(--color-primary);
+  --color-action-dark: var(--color-primary-dark);
+
+  /* 信任色：低饱和度绿，仅用于"为什么可以放心使用"等信任类信息的标记点，
+     不用于交互元素（按钮/链接仍统一用 --color-action），避免颜色语义混淆。 */
+  --color-trust: #3f7a5d;
+
   /* 文字色 */
   --color-text: #1f2937;
   --color-text-muted: #5b6b7f;
@@ -151,6 +160,15 @@ h3 {
 p {
   margin: 0 0 var(--space-3);
   color: var(--color-text);
+  /* 现代浏览器（Chromium 系）下自动避免"孤字换行"（行尾只剩一两个字被挤到下一行）；
+     不支持的浏览器忽略该值，回退为默认换行，不影响布局。 */
+  text-wrap: pretty;
+}
+
+/* 防止中文短语中间被断开换行导致孤字（如"主要是"被拆成"主"+"要是"）。
+   只包裹容易在行尾被断开的固定短语/词组，不用于大段正文。 */
+.text-keep {
+  white-space: nowrap;
 }
 
 a {
@@ -188,6 +206,17 @@ ul {
   margin-bottom: var(--space-5);
 }
 
+/* 中性状态说明（如"内容正在整理待复核"）：用左侧色条代替完整边框色块，
+   避免和 NoticeBanner 的警示级提示在视觉权重上混淆——这类信息不是警示，
+   不需要占用和警示同等的视觉分量。仅用于中性说明，警示仍使用 NoticeBanner。 */
+.status-note {
+  border-left: 3px solid var(--color-border-strong);
+  padding: var(--space-1) var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  max-width: 720px;
+}
+
 /* 按钮：统一 default / hover / focus / disabled / loading 状态，
    禁止页面各自定义按钮样式（见 P3.4）。 */
 .btn {
@@ -206,12 +235,12 @@ ul {
 }
 
 .btn-primary {
-  background: var(--color-primary);
+  background: var(--color-action);
   color: var(--color-text-inverse);
 }
 
 .btn-primary:hover {
-  background: var(--color-primary-dark);
+  background: var(--color-action-dark);
 }
 
 .btn-secondary {
@@ -225,7 +254,7 @@ ul {
 }
 
 .btn:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-action);
   outline-offset: 2px;
 }
 
@@ -256,16 +285,16 @@ ul {
 }
 
 .card--interactive:hover {
-  border-color: var(--color-primary-light);
+  border-color: var(--color-action);
   box-shadow: var(--shadow-sm);
 }
 
 /* 可交互卡片的键盘聚焦态：所有复用 .card--interactive 的组件
-   （如 QuickNavCard、AppCard）统一在此维护，避免各组件各自重复定义。 */
+   （如 StageCard、ChannelCard、AppCard）统一在此维护，避免各组件各自重复定义。 */
 .card--interactive:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-action);
   outline-offset: 2px;
-  border-color: var(--color-primary-light);
+  border-color: var(--color-action);
   box-shadow: var(--shadow-md);
 }
 

@@ -5,7 +5,8 @@ const navOpen = ref(false)
 
 const navLinks = [
   { to: '/', label: '首页' },
-  { to: '/stages', label: '权利指引' },
+  { to: '/stages', label: '诉讼阶段' },
+  { to: '/rights-guide', label: '权利指引' },
   { to: '/documents', label: '文书核对' },
   { to: '/official-channels', label: '官方渠道' },
   { to: '/about', label: '关于项目' },
@@ -134,7 +135,7 @@ function closeNav() {
 
 /* 当前页面高亮：蓝色背景 + 蓝色文字，让用户清楚知道自己在哪个页面。 */
 .header__link.router-link-active {
-  color: var(--color-primary);
+  color: var(--color-action);
   font-weight: 700;
   background: var(--color-surface);
 }

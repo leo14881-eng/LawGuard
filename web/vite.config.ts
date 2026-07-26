@@ -1,4 +1,5 @@
-import { defineConfig, loadEnv, type Plugin } from 'vitest/config'
+import { loadEnv, type Plugin } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import fs from 'node:fs'
 import path from 'node:path'

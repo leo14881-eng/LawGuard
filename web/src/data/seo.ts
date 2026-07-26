@@ -23,7 +23,19 @@ export const routeSeoMap: Record<string, RouteSeoEntry> = {
   },
   stages: {
     title: '刑事诉讼阶段导航｜LawGuard',
-    description: '了解刑事拘留、逮捕、审查起诉、法院审理和监狱服刑等阶段的一般程序和权利指引。',
+    description: '了解刑事拘留、逮捕、审查起诉、法院审理和监狱服刑等阶段的一般程序和当前进展。',
+  },
+  'stage-detail': {
+    title: '诉讼阶段详情｜LawGuard',
+    description: '查看具体诉讼阶段的一般程序说明、家属关注要点、下一步建议和官方法律依据。',
+  },
+  'rights-guide': {
+    title: '权利指引｜LawGuard',
+    description: '按诉讼阶段了解当事人一般享有哪些合法权利，帮助家属了解可以关注的权利要点。',
+  },
+  'rights-guide-detail': {
+    title: '权利指引详情｜LawGuard',
+    description: '查看具体诉讼阶段的一般性权利说明、行使权利的建议和官方法律依据。',
   },
   documents: {
     title: '刑事法律文书核对｜LawGuard',
@@ -54,11 +66,6 @@ export const routeSeoMap: Record<string, RouteSeoEntry> = {
   'legal-sources': {
     title: '法律来源与版本记录｜LawGuard',
     description: '本页面记录法护内容对应的法律依据来源、版本与核验状态，未完成核验的内容不会标注为已核验。',
-  },
-  'coming-soon': {
-    title: '内容整理中｜LawGuard',
-    description: '本部分内容正在依据公开有效法律文件整理，完成法律复核后开放。',
-    noindex: true,
   },
   'not-found': {
     title: '页面不存在｜LawGuard',

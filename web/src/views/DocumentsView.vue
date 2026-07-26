@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import NoticeBanner from '../components/NoticeBanner.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PrintPageButton from '../components/PrintPageButton.vue'
 import PrintFooter from '../components/PrintFooter.vue'
@@ -32,9 +31,7 @@ const methods = [
 
     <TrustBanner variant="compact" />
 
-    <NoticeBanner tone="info" title="内容状态说明">
-      <p>本页面内容为一般性方法框架，不针对任何具体文书或具体案件给出结论，具体条目待法律复核后正式发布。</p>
-    </NoticeBanner>
+    <p class="status-note">本页面内容为一般性方法框架，不针对任何具体文书或具体案件给出结论，具体条目待法律复核后正式发布。</p>
 
     <section class="section">
       <h2>一般性核对方法（待法律复核）</h2>
@@ -46,7 +43,7 @@ const methods = [
     <section class="section">
       <h2>需要专业帮助时</h2>
       <p>
-        如对具体文书内容存在疑问，建议及时联系执业律师，或通过
+        如对具体文书内容存在疑问，建议及时联系执业律师，<span class="text-keep">或通过</span>
         <RouterLink to="/official-channels">官方救济渠道</RouterLink>
         寻求帮助。
       </p>

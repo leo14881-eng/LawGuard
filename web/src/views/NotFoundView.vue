@@ -1,8 +1,6 @@
 <script setup lang="ts">
 /**
- * 真正未匹配到任何路由时展示的 404 页面，与 ComingSoonView（内容正在整理中，
- * 用于已规划但尚未开放的具体内容）含义不同，不应合并：ComingSoonView 用于站内
- * 已知链接指向的"待开放"内容，NotFoundView 用于访问了不存在的路径。
+ * 未匹配到任何已知路由时展示的 404 页面。
  */
 </script>
 

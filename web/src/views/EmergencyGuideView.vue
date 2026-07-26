@@ -129,7 +129,7 @@ const referencedLegalSources = computed(() =>
     <!-- 第一步：案件阶段 -->
     <section v-if="step === 1" class="wizard-step no-print">
       <StepProgress :current="1" :total="3" label="当事人目前处于什么状态？" />
-      <p class="wizard-step__hint">"看守所羁押"与"监狱服刑"的会见规则不同，请分别选择，不要混用。</p>
+      <p class="wizard-step__hint">"看守所羁押"与"监狱服刑"的会见规则不同，请分别选择，<span class="text-keep">不要混用</span>。</p>
       <div class="option-grid">
         <button
           v-for="opt in custodyStageOptions"

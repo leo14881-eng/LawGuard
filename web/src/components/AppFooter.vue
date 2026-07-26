@@ -28,9 +28,8 @@ const githubUrl = 'https://github.com/leo14881-eng/LawGuard'
 
 <style scoped>
 .footer {
-  border-top: 1px solid var(--color-border);
-  background: var(--color-surface-alt);
-  margin-top: auto;
+  border-top: 3px solid var(--color-action);
+  background: var(--color-primary-dark);
 }
 
 .footer__layer {
@@ -46,7 +45,7 @@ const githubUrl = 'https://github.com/leo14881-eng/LawGuard'
 
 .footer__layer--bottom {
   padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
   flex-direction: column;
   gap: var(--space-1);
 }
@@ -54,13 +53,13 @@ const githubUrl = 'https://github.com/leo14881-eng/LawGuard'
 .footer__title {
   margin: 0;
   font-weight: 700;
-  color: var(--color-primary-dark);
+  color: #ffffff;
 }
 
 .footer__desc {
   margin: var(--space-1) 0 0;
   font-size: 13px;
-  color: var(--color-text-muted);
+  color: #c7d1e8;
 }
 
 .footer__links {
@@ -71,25 +70,25 @@ const githubUrl = 'https://github.com/leo14881-eng/LawGuard'
 
 .footer__links a {
   font-size: 14px;
-  color: var(--color-text-muted);
+  color: #c7d1e8;
   text-decoration: none;
 }
 
 .footer__links a:hover {
-  color: var(--color-primary);
+  color: #ffffff;
 }
 
 .footer__trust-line {
   margin: 0;
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-notice-text);
+  color: #c7d1e8;
 }
 
 .footer__copyright {
   margin: 0;
   font-size: 12px;
-  color: var(--color-text-muted);
+  color: #8ea0c4;
 }
 
 @media (min-width: 640px) {

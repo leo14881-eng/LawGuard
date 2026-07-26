@@ -3,7 +3,6 @@ import HeroSection from '../components/HeroSection.vue'
 import QuickNavCard from '../components/QuickNavCard.vue'
 import StageCard from '../components/StageCard.vue'
 import ChannelCard from '../components/ChannelCard.vue'
-import AppCard from '../components/AppCard.vue'
 import NoticeBanner from '../components/NoticeBanner.vue'
 import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import TrustBanner from '../components/TrustBanner.vue'
@@ -43,27 +42,23 @@ const familySteps = [
   },
 ]
 
-/** "为什么可以放心使用"：小图标 + 标题 + 一句说明，替代原先大面积绿色胶囊标签。 */
+/** "为什么可以放心使用"：短标签 + 一句说明，替代原先图标卡片网格。 */
 const trustPoints = [
   {
     title: '官方法律来源',
     description: '内容对应官方公开法律文本，标注来源与核验状态。',
-    iconPath: 'M12 3l7 3.2v5.3c0 4.8-3.1 7.9-7 9.5-3.9-1.6-7-4.7-7-9.5V6.2L12 3z',
   },
   {
     title: '内容标注核验日期',
     description: '每条内容记录最后核验日期，未核验内容明确标注。',
-    iconPath: 'M4 6h16M4 6v13a1 1 0 001 1h14a1 1 0 001-1V6M8 3v4M16 3v4',
   },
   {
     title: '不收集个人信息',
     description: '不要求注册，不收集身份证、手机号等个人信息。',
-    iconPath: 'M12 3l7 3.2v5.3c0 4.8-3.1 7.9-7 9.5-3.9-1.6-7-4.7-7-9.5V6.2L12 3z M9 12l2 2 4-4',
   },
   {
     title: '不提供个案法律意见',
     description: '仅提供一般性程序信息，具体案件请咨询执业律师。',
-    iconPath: 'M12 3.5L2.5 19.5h19L12 3.5z M12 9.5v4 M12 16.3h.01',
   },
 ]
 </script>
@@ -76,50 +71,24 @@ const trustPoints = [
 
     <HeroSection />
 
-    <section class="section share-section">
-      <div class="container">
-        <SharePanel variant="primary" />
-      </div>
-    </section>
-
     <section class="section">
       <div class="container">
-        <h2 id="quick-nav-heading">你现在需要什么？</h2>
+        <h2 id="quick-nav-heading">现在，你可能需要做这些事</h2>
         <QuickNavCard heading-id="quick-nav-heading" />
       </div>
     </section>
 
     <section class="section section-alt">
       <div class="container">
-        <h2>为什么可以放心使用</h2>
-        <div class="grid grid-2 grid-4 trust-points">
-          <AppCard v-for="point in trustPoints" :key="point.title" class="trust-point">
-            <svg class="trust-point__icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                :d="point.iconPath"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <h3 class="trust-point__title">{{ point.title }}</h3>
-            <p class="trust-point__desc">{{ point.description }}</p>
-          </AppCard>
-        </div>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="container">
-        <h2>家属如何使用 LawGuard</h2>
-        <div class="grid grid-3">
-          <AppCard v-for="step in familySteps" :key="step.title" class="family-step">
-            <span class="family-step__index" aria-hidden="true">{{ step.index }}</span>
-            <h3 class="family-step__title">{{ step.title }}</h3>
-            <p class="family-step__desc">{{ step.description }}</p>
-          </AppCard>
+        <h2>怎么用</h2>
+        <div class="steprow">
+          <div v-for="step in familySteps" :key="step.title" class="stepitem">
+            <span class="stepitem__num" aria-hidden="true">{{ step.index }}</span>
+            <div>
+              <p class="stepitem__title">{{ step.title }}</p>
+              <p class="stepitem__desc">{{ step.description }}</p>
+            </div>
+          </div>
         </div>
         <NoticeBanner tone="caution" class="family-step__notice">
           <p>
@@ -127,6 +96,18 @@ const trustPoints = [
             应以具体监管场所和办案机关的现行规定为准。
           </p>
         </NoticeBanner>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>为什么可以放心使用</h2>
+        <div class="trustrow">
+          <div v-for="point in trustPoints" :key="point.title" class="trustchip">
+            <span class="trustchip__title">{{ point.title }}</span>
+            <span class="trustchip__desc">{{ point.description }}</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -175,6 +156,12 @@ const trustPoints = [
         </div>
       </div>
     </section>
+
+    <section class="section share-section">
+      <div class="container">
+        <SharePanel variant="compact" />
+      </div>
+    </section>
   </div>
 </template>
 
@@ -184,8 +171,8 @@ const trustPoints = [
 }
 
 .share-section {
-  padding-top: 0;
-  padding-bottom: var(--space-6);
+  padding-top: var(--space-6);
+  padding-bottom: var(--space-8);
 }
 
 .section__lead {
@@ -199,50 +186,43 @@ const trustPoints = [
   margin-top: 20px;
 }
 
-.trust-points {
-  margin-top: var(--space-2);
+/* 使用步骤：横向带状条，顶部色条 + 编号，替代原先三张等权卡片 */
+.steprow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
-.trust-point__icon {
-  width: 26px;
-  height: 26px;
-  color: var(--color-primary);
-  margin-bottom: var(--space-2);
+.stepitem {
+  display: flex;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 3px solid var(--color-action);
 }
 
-.trust-point__title {
-  margin: 0 0 6px;
-  font-size: 16px;
-  color: var(--color-primary-dark);
-}
-
-.trust-point__desc {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.family-step__index {
+.stepitem__num {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: var(--color-primary);
+  background: var(--color-action);
   color: var(--color-text-inverse);
   font-size: 13px;
   font-weight: 700;
-  margin-bottom: var(--space-3);
 }
 
-.family-step__title {
-  margin: 0 0 6px;
-  font-size: 17px;
+.stepitem__title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--color-primary-dark);
 }
 
-.family-step__desc {
+.stepitem__desc {
   margin: 0;
   font-size: 14px;
   color: var(--color-text-muted);
@@ -250,6 +230,57 @@ const trustPoints = [
 
 .family-step__notice {
   margin-top: var(--space-5);
+}
+
+/* 信任点：标签 + 说明文字，替代原先图标卡片网格，减少"处处是卡片"的观感；
+   用 grid 而非 flex-wrap，避免不同长度的说明文字撑出参差不齐的行高。 */
+.trustrow {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+@media (min-width: 640px) {
+  .trustrow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 960px) {
+  .trustrow {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.trustchip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+}
+
+.trustchip__title {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+}
+
+.trustchip__desc {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+@media (min-width: 960px) {
+  .steprow {
+    flex-direction: row;
+  }
+
+  .stepitem {
+    flex: 1;
+  }
 }
 
 .boundary-section {
@@ -271,7 +302,11 @@ const trustPoints = [
   margin: 0;
   color: var(--color-text-muted);
   font-size: 14px;
-  max-width: 320px;
+  /* 覆盖全局 p 的 text-wrap: pretty：这段文字所在的窄栏（桌面端固定 280px）
+     容易在结尾只剩两三个字被挤到下一行，balance 针对短文本块平均分配每行
+     宽度，比 pretty 更适合这种"一两句话的窄栏文案"场景（同款用法见
+     HeroSection 的 .hero__title）。 */
+  text-wrap: balance;
 }
 
 .boundary__content {

@@ -31,7 +31,7 @@ defineProps<{
   margin: 0 0 var(--space-1);
   font-size: var(--font-size-label);
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-action);
 }
 
 .step-progress__label {
@@ -52,6 +52,6 @@ defineProps<{
 }
 
 .step-progress__segment--done {
-  background: var(--color-primary);
+  background: var(--color-action);
 }
 </style>

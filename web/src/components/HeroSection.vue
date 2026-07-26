@@ -1,9 +1,8 @@
 <script setup lang="ts">
 /**
- * 首页 Hero 区域：左侧 60% 文案 + 右侧 40% 应急导航步骤卡（非交互，纯展示，
- * 不使用装饰插画）。信任标签与非法律意见声明已移出 Hero，分别见 Trust Banner
- * 与首页"为什么可以放心使用""使用边界"区块，避免与本区域重复。
- * 背景复用既有 --color-surface → --color-bg 渐变，不新增颜色。
+ * 首页 Hero 区域（方案 A · 可信公益型）：左侧文案 + 右侧静态使用流程卡片，
+ * 浅色背景、低饱和度，突出"平和、可信、家属友好"的基调，不使用深色通栏
+ * 或高对比强调色。
  */
 const navigationSteps = ['选择案件阶段', '查看当前权利', '获取行动清单', '核对官方渠道']
 </script>
@@ -27,7 +26,8 @@ const navigationSteps = ['选择案件阶段', '查看当前权利', '获取行�
       </div>
 
       <div class="hero__aside">
-        <div class="card hero__steps" aria-label="应急导航步骤">
+        <div class="card hero__steps" aria-label="使用流程">
+          <p class="hero__steps-title">使用流程</p>
           <ol class="hero__steps-list">
             <li v-for="(step, index) in navigationSteps" :key="step" class="hero__steps-item">
               <span class="hero__steps-index" aria-hidden="true">{{ index + 1 }}</span>
@@ -97,6 +97,15 @@ const navigationSteps = ['选择案件阶段', '查看当前权利', '获取行�
 .hero__steps {
   display: flex;
   flex-direction: column;
+}
+
+.hero__steps-title {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-4);
 }
 
 .hero__steps-list {
