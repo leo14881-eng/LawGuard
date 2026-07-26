@@ -148,7 +148,7 @@ def build_planner_context() -> str:
     recent_task_history = value_gate.load_recent_tasks(cfg.RUNTIME_DIR, limit=30)
     capability_matrix_text = value_gate.build_capability_matrix_context()
     repetition_text = value_gate.build_repetition_context(recent_task_history)
-    backlog_text = backlog.build_planner_backlog_context()
+    backlog_text = backlog.build_planner_backlog_context(cfg.RUNTIME_DIR)
 
     parts = [
         progress_section,

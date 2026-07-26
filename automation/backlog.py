@@ -17,7 +17,9 @@ Value Gate 回答"这个候选任务本身够不够格被执行"。
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2}
 
@@ -164,15 +166,76 @@ BACKLOG: tuple[BacklogItem, ...] = (
 )
 
 
-def get_ready_items() -> list[BacklogItem]:
-    """返回状态为 READY 且允许 Auto Dev 的条目，按优先级（P0>P1>P2）再按 ID 排序。"""
-    items = [b for b in BACKLOG if b.status == "READY" and b.allow_auto_dev]
+def get_completed_backlog_ids(runtime_dir: Path) -> set[str]:
+    """扫描 automation/runtime/*/run_report.json，返回全部已被真实执行证明"完成"
+    的 backlog_id/切片 ID 集合。
+
+    唯一判断依据是真实运行产物：`final_status == "COMMITTED"` 且该次任务的
+    `task.backlog_id` 有值——不依赖标题匹配、不依赖模型自述、不做任何推断。
+    目录不存在或文件缺失/损坏时按"无证据"处理（跳过该条记录，不计入已完成），
+    绝不会因为"读不到数据"就反过来猜测某条目已完成，这是本函数"不允许猜测"
+    要求的具体落实：证据不足 = 保持保守，不代表可以脑补。
+    """
+    completed: set[str] = set()
+    if not runtime_dir.exists():
+        return completed
+    for run_dir in runtime_dir.iterdir():
+        if not run_dir.is_dir():
+            continue
+        report_path = run_dir / "run_report.json"
+        if not report_path.exists():
+            continue
+        try:
+            data = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict) or data.get("final_status") != "COMMITTED":
+            continue
+        task = data.get("task")
+        if not isinstance(task, dict):
+            continue
+        bid = task.get("backlog_id")
+        if isinstance(bid, str) and bid.strip():
+            completed.add(bid.strip())
+    return completed
+
+
+def is_item_completed(item: BacklogItem, completed_ids: set[str]) -> bool:
+    """判断一个 Backlog 条目本身是否应被视为"已完成"（从而从 READY 列表中过滤）。
+
+    - 未拆分切片的条目（如 BL-001）：其自身 ID 出现在已完成集合中即视为完成。
+    - 已拆分切片的条目（如 BL-003/BL-005）：必须全部切片 ID 都出现在已完成
+      集合中才视为整条完成——只完成部分切片时，条目本身应继续留在 READY 列表，
+      供 Planner 挑选下一个尚未完成的切片，而不是被整体误判为"做完了"。
+    """
+    if item.slices:
+        return all(s.slice_id in completed_ids for s in item.slices)
+    return item.backlog_id in completed_ids
+
+
+def get_ready_items(runtime_dir: Path | None = None) -> list[BacklogItem]:
+    """返回状态为 READY、允许 Auto Dev、且尚未被真实执行记录证明已完成的条目，
+    按优先级（P0>P1>P2）再按 ID 排序。
+
+    runtime_dir 缺省时使用 automation/config.py 的 RUNTIME_DIR（延迟导入，避免
+    模块加载时的循环依赖）；调用方（如 orchestrator.py）已持有自己的 RUNTIME_DIR
+    时应显式传入，保持与其它模块（如 value_gate.load_recent_tasks）一致的用法，
+    也便于测试注入临时目录。
+    """
+    if runtime_dir is None:
+        from automation.config import RUNTIME_DIR as _default_runtime_dir
+        runtime_dir = _default_runtime_dir
+    completed_ids = get_completed_backlog_ids(runtime_dir)
+    items = [
+        b for b in BACKLOG
+        if b.status == "READY" and b.allow_auto_dev and not is_item_completed(b, completed_ids)
+    ]
     return sorted(items, key=lambda b: (PRIORITY_ORDER.get(b.priority, 99), b.backlog_id))
 
 
-def has_ready_item() -> bool:
-    """Backlog First 核心判断：是否存在可以立即规划的 READY 条目。"""
-    return bool(get_ready_items())
+def has_ready_item(runtime_dir: Path | None = None) -> bool:
+    """Backlog First 核心判断：是否存在可以立即规划的 READY 条目（已过滤掉已完成的）。"""
+    return bool(get_ready_items(runtime_dir))
 
 
 def get_item(backlog_id: str) -> BacklogItem | None:
@@ -196,9 +259,13 @@ def is_valid_reference(backlog_id: str) -> bool:
     return backlog_id in all_valid_references()
 
 
-def build_planner_backlog_context() -> str:
+def build_planner_backlog_context(runtime_dir: Path | None = None) -> str:
     """生成供 Planner 上下文使用的 Backlog 文本：Backlog First 规则说明 + 全部条目。"""
-    ready = get_ready_items()
+    if runtime_dir is None:
+        from automation.config import RUNTIME_DIR as _default_runtime_dir
+        runtime_dir = _default_runtime_dir
+    completed_ids = get_completed_backlog_ids(runtime_dir)
+    ready = get_ready_items(runtime_dir)
     lines = [
         "## Product Backlog First 规则（权威来源：LAWGUARD_SOT.md 第 21 节）",
         "存在下方 READY 且允许 Auto Dev 的条目时，必须优先从中选择优先级最高者规划",
@@ -226,6 +293,15 @@ def build_planner_backlog_context() -> str:
     if others:
         lines.append("\n### 其它条目（非 READY，仅供参考，不得选择）")
         for item in others:
-            lines.append(f"- {item.backlog_id}（状态：{item.status}，优先级：{item.priority}）：{item.title}")
+            # 条目在 BACKLOG 静态数据里状态字段仍是 READY，但已被真实运行记录
+            # （automation/runtime/*/run_report.json 中 final_status=COMMITTED）
+            # 证明完成——显式标注"已完成"，不要让 Planner 误以为原始 READY 标签
+            # 仍然有效、可以重新选择同一个条目。
+            display_status = (
+                "已完成（有真实执行记录，不得再次选择）"
+                if item.status == "READY" and is_item_completed(item, completed_ids)
+                else item.status
+            )
+            lines.append(f"- {item.backlog_id}（状态：{display_status}，优先级：{item.priority}）：{item.title}")
 
     return "\n".join(lines)

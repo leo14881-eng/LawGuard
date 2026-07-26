@@ -744,7 +744,7 @@ class TestBacklogFirstEnforcement(_OrchestratorTestBase):
         # 无限提供新的候选（这不是本测试要验证的内容）。
         call_counter = {"n": 0}
 
-        def _ready_items_side_effect():
+        def _ready_items_side_effect(*_args, **_kwargs):
             call_counter["n"] += 1
             return [_FAKE_READY_ITEM] if call_counter["n"] <= 2 else []
 
@@ -828,7 +828,7 @@ class TestBacklogFirstEnforcement(_OrchestratorTestBase):
         # 之后清空，理由同上一个测试。
         call_counter = {"n": 0}
 
-        def _ready_items_side_effect():
+        def _ready_items_side_effect(*_args, **_kwargs):
             call_counter["n"] += 1
             return [_FAKE_READY_ITEM] if call_counter["n"] <= 1 else []
 

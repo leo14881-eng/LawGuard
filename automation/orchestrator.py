@@ -544,7 +544,7 @@ def run_task_cycle(
         # "没有任务"信号绕过——历史真实案例（Task #14）就是在存在可规划方向的
         # 情况下被误判为没有任务。命中时不信任 Planner 的自我判断，视为无效响应，
         # 计入本次已拒绝候选，继续请求下一候选（而不是直接终止运行）。
-        ready_backlog_items = backlog.get_ready_items()
+        ready_backlog_items = backlog.get_ready_items(RUNTIME_DIR)
         if candidate_task.risk_level in ("DONE", "BLOCKED", "NO_HIGH_VALUE_TASK") and ready_backlog_items:
             ready_ids = "、".join(f"{item.backlog_id}（{item.priority}）" for item in ready_backlog_items)
             reason = (
