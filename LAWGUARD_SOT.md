@@ -538,11 +538,18 @@ D:\SOFT\LawGuard
   ⑤ 修复路由懒加载切换/刷新页面时因异步组件无 loading 占位、Footer 短暂贴近
   Header 造成的"蓝色页面一闪而过"视觉跳动（`App.vue` 新增 `Suspense` +
   `AppLoading` 兜底）。详见 `docs/project/AUTODEV_PROGRESS.md` 功能状态表。
-- 2026-07-26：排查用户反馈的"刷新页面蓝色闪烁"问题，确认根因是 `index.html`/
-  `site.webmanifest` 的 `theme-color` 深蓝色被浏览器用于渲染地址栏/窗口区域，
-  已改为白色；新增 `web/e2e/first-paint-flash.spec.ts`（`@playwright/test`）
-  固化"页面 DOM 本身不得出现非预期蓝色背景"的回归断言，通过 `npm run test:e2e`
-  单独运行，不影响 `npm run test` 的 Vitest 单测。
+- 2026-07-26：排查用户反馈的"刷新页面蓝色闪烁"问题。第一轮把 `index.html`/
+  `site.webmanifest` 的 `theme-color` 由深蓝改为白色，修复了浏览器地址栏/
+  窗口渲染层面的因素，但用户复测后确认闪烁依然存在，说明这不是根因。第二轮
+  用 Playwright + CDP 逐帧采样与录屏定位到真正根因：刷新（reload）后最初
+  300～900ms，`<RouterView v-slot>` 的 `Component` 仍为 `undefined`（路由未
+  解析完成），`<Suspense>` 不会触发 pending/resolve，`<main>` 高度为 0，深蓝色
+  `AppFooter` 已渲染在其后并短暂出现在视口顶部；只在刷新时出现是因为站内跳转
+  时目标 chunk 通常已加载，这一空档极短。已在 `App.vue` 用 `!Component ||
+  loading` 驱动 `<main>` 的加载态 `min-height`（`Component` 为空或 Suspense
+  pending 时都生效）修复，并用 `web/e2e/first-paint-flash.spec.ts`
+  （`@playwright/test`，先 `goto` 再 `reload` 复现真实刷新场景）固化回归断言，
+  通过 `npm run test:e2e` 单独运行，不影响 `npm run test` 的 Vitest 单测。
 - 2026-07-26：建立全站统一正文阅读宽度规范：新增 Design Token
   `--content-width: 760px` 与全局 `.prose` 工具类（第 12.1 节），说明类页面
   与详情页统一接入；明确"h1/h2/Hero 短标题可用 `text-wrap: balance`，普通
