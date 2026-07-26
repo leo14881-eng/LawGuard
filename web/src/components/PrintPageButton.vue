@@ -11,8 +11,10 @@ const props = withDefaults(
   defineProps<{
     /** 打印/另存为 PDF 时用作默认文件名参考的中文页面标题；不传则不改动 document.title */
     pageTitle?: string
+    /** 打印按钮的无障碍标签（aria-label），供屏幕阅读器等辅助技术使用 */
+    ariaLabel?: string
   }>(),
-  { pageTitle: '' }
+  { pageTitle: '', ariaLabel: '打印本页' }
 )
 
 function handlePrint() {
@@ -30,7 +32,7 @@ function handlePrint() {
 
 <template>
   <div class="print-page-action no-print">
-    <button type="button" class="btn btn-secondary" @click="handlePrint">
+    <button type="button" class="btn btn-secondary" :aria-label="ariaLabel" @click="handlePrint">
       打印或保存本页
     </button>
     <p class="print-page-hint">
