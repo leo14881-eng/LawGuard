@@ -4,10 +4,10 @@
 LawGuard V1 —— Auto Dev 全自动开发循环
 
 ## Last Update
-2026-07-26T12:58:36
+2026-07-26T13:02:23
 
 ## Last Commit
-AutoDev(task-011): chore: 验证 LegalSourcesView 打印入口符合验收条件（PrintPageButton 已就位、无副作
+AutoDev(task-012): feat: EmergencyGuideView 新增打印本页入口，复用 PrintPageButton
 
 ## Completed Tasks
 - task-001: 在法律来源页面完善官方来源展示顺序与无障碍性，显示版本记录信息并复用现有组件与设计令牌
@@ -21,6 +21,7 @@ AutoDev(task-011): chore: 验证 LegalSourcesView 打印入口符合验收条件
 - task-009: 首页快速导航区块无障碍增强（ARIA 标签与语义改造）
 - task-010: Documents 页面新增“打印本页”入口，复用 PrintPageButton 组件
 - task-011: 在 Legal Sources 页面新增“打印本页”入口，复用 PrintPageButton 组件
+- task-012: 为 Emergency Guide 页面新增“打印本页”入口，复用 PrintPageButton 组件
 
 ## Current Task
 （无，等待 Planner 规划下一任务）

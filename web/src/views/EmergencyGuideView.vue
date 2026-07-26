@@ -118,7 +118,11 @@ const referencedLegalSources = computed(() =>
     <PageHeader
       title="被羁押后紧急行动指引"
       description="家人、恋人或朋友突然被羁押，不知道谁可以委托律师？根据关系和案件状态生成下一步行动清单。"
-    />
+    >
+      <template #actions>
+        <PrintPageButton page-title="被羁押后紧急行动清单 - 法护 LawGuard" />
+      </template>
+    </PageHeader>
 
     <TrustBanner variant="compact" />
 
@@ -336,7 +340,6 @@ const referencedLegalSources = computed(() =>
       <p class="result-section__unified-disclaimer">{{ unifiedDisclaimer }}</p>
 
       <div class="result-actions no-print">
-        <PrintPageButton page-title="被羁押后紧急行动清单 - 法护 LawGuard" />
         <button type="button" class="btn btn-secondary" @click="restart">重新开始</button>
       </div>
 
