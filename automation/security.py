@@ -196,9 +196,61 @@ _FIX_TEST_WEAKENING_PATTERNS = [
     "it.skip", "describe.skip", "test.skip",
 ]
 
-# Claude 在执行摘要中报告"无法安全判断/需要人工决策"时使用的既定约定标记
-# （见 claude_runner.py 的各 Prompt Builder），只要出现即视为需要人工决策。
-_UNSAFE_STDOUT_MARKERS = ["blocked", "需要人工决策", "无法安全判断"]
+# 【2026-07-26 修复】原实现是 `"blocked" in stdout_lower` 这种单词包含判断，
+# 造成 Task #4（Official Channels 页面新增打印按钮）真实误判：Claude 因为
+# Claude Code 非交互环境下 Bash 工具权限受限、无法实际执行 `npx vue-tsc`/
+# `npm run build`，在执行摘要里写了"验证结果：BLOCKED —— 无法执行验证命令"，
+# 本意是"请人工在有权限的环境里手动跑一遍验证命令"，属于工具/环境限制，
+# 不是需要人工做产品/法律/安全层面决策；但旧逻辑只要文本里出现"blocked"这个
+# 单词就直接停止，把这类场景、以及"no blockers"/"not blocked"/
+# "blockers: none"等否定语境全部一并误伤。
+#
+# 新实现改为"短语级"匹配，不再对 blocked/blocker/human 等单词做裸词包含判断：
+# 1. 先在文本中挖掉已知的否定短语（_NEGATED_HUMAN_BLOCK_PHRASES），避免它们
+#    被后续的正向短语判断命中；
+# 2. 只有命中明确表达"需要人工决策/无法安全继续"意图的完整短语
+#    （_EXPLICIT_HUMAN_BLOCK_PHRASES）才判定为需要人工决策。
+# claude_runner.py 的 P0 Prompt 约定 Claude 在缺少可核验法律来源时应写
+# "BLOCKED：缺少可核验法律来源"，这里改为直接匹配"缺少可核验法律来源"这个
+# 无歧义的具体短语，不再依赖单独的"BLOCKED"一词，同样能可靠捕获该场景。
+_NEGATED_HUMAN_BLOCK_PHRASES = [
+    "no blockers", "no blocker", "not blocked", "no blocked issues",
+    "nothing is blocked", "no human decision needed", "no human decision is needed",
+    "does not require human input", "doesn't require human input",
+    "does not need human input", "doesn't need human input",
+    "blocked issues: none", "blockers: none", "blocker: none", "blocked: none",
+    "未阻塞", "无阻塞项", "没有阻塞问题", "没有阻塞项", "不需要人工决策",
+    "无需用户确认", "不涉及人工选择", "无需人工决策",
+]
+
+_EXPLICIT_HUMAN_BLOCK_PHRASES = [
+    "i am blocked and need human input",
+    "i'm blocked and need human input",
+    "requires human decision",
+    "requires a human decision",
+    "requires human input",
+    "requires human approval",
+    "require human approval",
+    "cannot proceed without user confirmation",
+    "cannot proceed without human",
+    "cannot safely proceed",
+    "cannot safely continue",
+    "need human input",
+    "needs human input",
+    "need a human decision",
+    "needs a human decision",
+    "需要人工决策",
+    "需要用户确认",
+    "需要用户选择",
+    "需要人工确认",
+    "无法继续，需要用户确认",
+    "无法安全继续",
+    "无法安全判断",
+    "无法安全地继续执行",
+    "缺少可核验法律来源",
+    "涉及法律内容，无法自动判断",
+    "涉及安全或权限设计，需要人工批准",
+]
 
 
 def _added_diff_lines(diff_text: str) -> str:
@@ -212,17 +264,41 @@ def _added_diff_lines(diff_text: str) -> str:
     return "\n".join(lines)
 
 
+def _contains_explicit_human_block_phrase(stdout_lower: str) -> str | None:
+    """在排除已知否定短语后，判断文本中是否出现明确的"需要人工决策"短语。
+
+    先把命中的否定短语从文本中挖掉（替换为空格），再去匹配正向短语列表，避免
+    "no human decision needed" 这类否定句里恰好包含 "human decision" 从而被
+    误判。返回命中的具体短语；未命中返回 None。
+    """
+    masked = stdout_lower
+    for phrase in _NEGATED_HUMAN_BLOCK_PHRASES:
+        if phrase in masked:
+            masked = masked.replace(phrase, " ")
+
+    for phrase in _EXPLICIT_HUMAN_BLOCK_PHRASES:
+        if phrase in masked:
+            return phrase
+    return None
+
+
 def detect_unsafe_fix_signal(*, claude_stdout: str, diff_text: str) -> str | None:
     """检测 Validation/Review 自动修复本轮是否出现禁止继续自动重试的信号。
 
     命中任意一项时返回中文原因说明（调用方应立即停止、标记 BLOCKED，不得继续重试）；
     未命中返回 None。这是一个有意保持简单、可解释的关键词/模式黑名单检测，不做语义
-    理解——宁可对可疑内容保守拦截，也不在自动化流水线中静默放行敏感改动。
+    理解——宁可对可疑内容保守拦截，也不在自动化流水线中静默放行敏感改动；但"是否
+    需要人工决策"这一项改为短语级匹配（见 _EXPLICIT_HUMAN_BLOCK_PHRASES /
+    _NEGATED_HUMAN_BLOCK_PHRASES 上方注释），不再对 blocked/blocker/human 等
+    单词做裸词包含判断，避免把"no blockers""not blocked"等否定语境或
+    "验证结果：BLOCKED——因权限受限无法执行验证命令"这类工具/环境限制说明误判为
+    需要人工做产品/法律/安全决策。
     """
     stdout_lower = (claude_stdout or "").lower()
-    for marker in _UNSAFE_STDOUT_MARKERS:
-        if marker in stdout_lower:
-            return f"Claude 在执行摘要中报告了「{marker}」，视为需要人工决策"
+
+    matched_phrase = _contains_explicit_human_block_phrase(stdout_lower)
+    if matched_phrase:
+        return f"Claude 在执行摘要中明确表示需要人工决策：「{matched_phrase}」"
 
     added_lines_lower = _added_diff_lines(diff_text).lower()
 

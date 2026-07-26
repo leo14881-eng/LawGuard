@@ -204,5 +204,76 @@ class TestDetectUnsafeFixSignal(unittest.TestCase):
         self.assertIsNotNone(detect_unsafe_fix_signal(claude_stdout="类型检查已通过。", diff_text=diff))
 
 
+class TestDetectUnsafeFixSignalBlockedPhraseMatching(unittest.TestCase):
+    """2026-07-26 修复：detect_unsafe_fix_signal 此前用 `"blocked" in text.lower()`
+    单词包含判断，把 Task #4（Official Channels 新增打印按钮）里 Claude 摘要中的
+    "验证结果：BLOCKED——因权限受限无法执行验证命令"误判为需要人工决策，实际是
+    工具/环境限制，不是产品/法律/安全层面需要人工决策。改为短语级匹配后，本类
+    验证：否定语境不再误判、真正的人工决策请求仍能正确识别、本次真实事故复现。
+    """
+
+    # ---- 否定语境：不得判定为 BLOCKED ----
+    def test_no_blockers_is_not_blocked(self):
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout="No blockers.", diff_text=""))
+
+    def test_not_blocked_is_not_blocked(self):
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout="Not blocked.", diff_text=""))
+
+    def test_blockers_none_is_not_blocked(self):
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout="Blockers: none.", diff_text=""))
+
+    def test_blocked_issues_none_is_not_blocked(self):
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout="Blocked issues: none.", diff_text=""))
+
+    def test_no_human_decision_needed_is_not_blocked(self):
+        self.assertIsNone(
+            detect_unsafe_fix_signal(claude_stdout="No human decision needed. All done.", diff_text="")
+        )
+
+    def test_chinese_no_blocking_issue_is_not_blocked(self):
+        self.assertIsNone(
+            detect_unsafe_fix_signal(claude_stdout="没有阻塞问题，不需要人工决策。", diff_text="")
+        )
+
+    # ---- 明确阻塞语句：必须判定为 BLOCKED ----
+    def test_i_need_human_input_is_blocked(self):
+        result = detect_unsafe_fix_signal(
+            claude_stdout="I am blocked and need human input to proceed.", diff_text=""
+        )
+        self.assertIsNotNone(result)
+
+    def test_chinese_needs_user_choice_is_blocked(self):
+        result = detect_unsafe_fix_signal(claude_stdout="存在多个实现方案，需要用户选择方案。", diff_text="")
+        self.assertIsNotNone(result)
+
+    # ---- 本次真实事故复现：不得再误判 ----
+    def test_real_task4_claude_output_is_not_blocked(self):
+        real_stdout = (
+            "代码改动确认无误，改动本身是最小化的、复用现有组件与既定模式。\n\n"
+            "## 执行摘要\n\n"
+            "**改动内容**：在 `web/src/views/OfficialChannelsView.vue` 中导入 "
+            "`PrintPageButton` 组件，并放入 `PageHeader` 的 `#actions` 插槽中。\n\n"
+            "**验证结果：BLOCKED —— 无法执行验证命令**\n\n"
+            "我在本次会话中多次尝试执行 `npx vue-tsc --noEmit` 与 `npm run build`"
+            "（分别通过 Bash 与 PowerShell 工具，含单独执行、`cd` 后执行等多种方式），"
+            "均被系统提示\"This command requires approval\"而无法运行，当前自动化任务"
+            "环境中没有人工在场批准该权限请求，因此两项强制验证命令均未能实际执行，"
+            "未能取得通过结果。\n\n"
+            "请知悉：本次改动范围极小，理论上兼容风险很低；但按规则我不能在未实际"
+            "跑通验证命令的情况下宣称\"已通过\"。建议由你本地或在有权限批准命令执行"
+            "的环境中手动运行以下命令确认：\n\n```\ncd web\nnpx vue-tsc --noEmit\n"
+            "npm run build\n```\n\n"
+            "未修改 `LAWGUARD_SOT.md`，未涉及任何法律内容改动，无 P0/P-1 相关风险。"
+            "未执行 git commit / push。"
+        )
+        self.assertIsNone(detect_unsafe_fix_signal(claude_stdout=real_stdout, diff_text=""))
+
+    def test_legal_source_missing_convention_still_detected(self):
+        # claude_runner.py 的 P0 Prompt 约定 Claude 在缺少可核验法律来源时应写
+        # "BLOCKED：缺少可核验法律来源"，改用短语匹配后必须仍能可靠捕获该场景。
+        stdout = "执行摘要：BLOCKED：缺少可核验法律来源，无法继续实施。"
+        self.assertIsNotNone(detect_unsafe_fix_signal(claude_stdout=stdout, diff_text=""))
+
+
 if __name__ == "__main__":
     unittest.main()
