@@ -214,9 +214,10 @@ def validate_task_payload(data: dict) -> list[str]:
     if issues:
         return issues
 
-    # DONE（无更多开发任务）与 BLOCKED（存在方向但无法安全继续）均不涉及实际文件改动，
+    # DONE（无更多开发任务）、BLOCKED（存在方向但无法安全继续）、
+    # NO_HIGH_VALUE_TASK（没有高价值候选，但不涉及阻塞）均不涉及实际文件改动，
     # 跳过文件与命令校验。
-    if data["risk_level"] not in ("BLOCKED", "DONE"):
+    if data["risk_level"] not in ("BLOCKED", "DONE", "NO_HIGH_VALUE_TASK"):
         issues.extend(check_files_lists(data["files_allowed"], data["files_forbidden"]))
         for command in data["validation_commands"]:
             if normalize_command(command) is None:

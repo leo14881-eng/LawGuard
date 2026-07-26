@@ -95,6 +95,16 @@ class TestValidateTaskPayload(unittest.TestCase):
         data["validation_commands"] = []
         self.assertEqual(validate_task_payload(data), [])
 
+    def test_no_high_value_task_skips_file_checks(self):
+        # NO_HIGH_VALUE_TASK（2026-07-26 新增）：Planner 明确判断当前没有高价值
+        # 候选，且非阻塞场景，同样不涉及实际文件改动，应跳过文件/命令校验。
+        data = dict(VALID_TASK)
+        data["risk_level"] = "NO_HIGH_VALUE_TASK"
+        data["files_allowed"] = []
+        data["files_forbidden"] = []
+        data["validation_commands"] = []
+        self.assertEqual(validate_task_payload(data), [])
+
     def test_disallowed_command_detected(self):
         data = dict(VALID_TASK)
         data["validation_commands"] = ["git push origin main"]

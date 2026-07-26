@@ -671,6 +671,70 @@ class TestBlockedByPlannerSkipsClaude(_OrchestratorTestBase):
         mock_run_claude.assert_not_called()
         self.mock_git.commit.assert_not_called()
 
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_blocked_missing_api_permission_stays_blocked(self, _ctx, _create_client, mock_plan, mock_run_claude):
+        # 真正的阻塞场景：缺少必要权限（例如访问某个官方数据源需要 API Key，
+        # 当前环境未配置），必须保留 BLOCKED，不能被误判为 NO_HIGH_VALUE_TASK。
+        blocked_task = _fake_task(risk_level="BLOCKED")
+        blocked_task.rationale = "需要调用官方 API 校验法律来源版本，但当前环境未配置对应 API Key，缺少必要权限，无法安全继续"
+        mock_plan.return_value = (blocked_task, [_fake_usage()])
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SECURITY_FAILURE)
+        mock_run_claude.assert_not_called()
+        self.mock_git.commit.assert_not_called()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_blocked_requires_human_legal_decision_stays_blocked(self, _ctx, _create_client, mock_plan, mock_run_claude):
+        # 真正的阻塞场景：需要人工在多个法律内容呈现方案之间做出选择，
+        # 必须保留 BLOCKED，不能被误判为 NO_HIGH_VALUE_TASK。
+        blocked_task = _fake_task(risk_level="BLOCKED")
+        blocked_task.rationale = "存在两种法律条文呈现方案，涉及产品/法律取舍，需要人工决策后才能继续，不属于缺少高价值任务"
+        mock_plan.return_value = (blocked_task, [_fake_usage()])
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SECURITY_FAILURE)
+        mock_run_claude.assert_not_called()
+        self.mock_git.commit.assert_not_called()
+
+
+class TestNoHighValueTaskFromPlannerSignal(_OrchestratorTestBase):
+    """risk_level=NO_HIGH_VALUE_TASK（2026-07-26 新增）：Planner 明确判断当前没有
+    符合 Value Gate 的高价值候选，且不存在权限/依赖/环境/资源障碍、不需要人工决策
+    ——这是正常信号，必须与 BLOCKED 区分，立即停止，不再消耗剩余候选名额。
+    """
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_no_high_value_task_stops_immediately_without_further_candidates(
+        self, _ctx, _create_client, mock_plan, mock_run_claude
+    ):
+        no_task = _fake_task(risk_level="NO_HIGH_VALUE_TASK")
+        no_task.rationale = "Next Candidate Tasks 为空，且能力矩阵多数模块已饱和，暂无符合 Value Gate 的高价值任务"
+        mock_plan.return_value = (no_task, [_fake_usage()])
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            exit_code = orchestrator.main([])
+        output = stdout.getvalue()
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        # 第一个候选就直接是 NO_HIGH_VALUE_TASK 信号，不应再请求 Candidate 2/3。
+        self.assertEqual(mock_plan.call_count, 1)
+        mock_run_claude.assert_not_called()
+        self.mock_git.commit.assert_not_called()
+        self.assertIn("当前没有符合 Value Gate 的高价值任务", output)
+
 
 class TestPlannerDoneEndsAutoDevSuccessfully(_OrchestratorTestBase):
     """risk_level=DONE：项目在 V1 范围内已没有更多可安全规划的新开发任务，正常结束。"""
@@ -973,7 +1037,7 @@ class TestPlannerCandidateLoop(_OrchestratorTestBase):
         self.assertEqual(mock_plan.call_count, 3)
         mock_run_claude.assert_not_called()
         self.mock_git.commit.assert_not_called()
-        self.assertIn("个候选均未通过 Value Gate", output)
+        self.assertIn("当前没有符合 Value Gate 的高价值任务", output)
 
     @mock.patch("automation.claude_runner.run_claude")
     @mock.patch("automation.openai_client.plan_next_task")

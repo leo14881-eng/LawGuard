@@ -551,6 +551,19 @@ def run_task_cycle(
             logger.warning(msg)
             return finalize("BLOCKED_BY_PLANNER", msg, EXIT_SECURITY_FAILURE)
 
+        if candidate_task.risk_level == "NO_HIGH_VALUE_TASK":
+            # Planner 明确判断：没有权限/依赖/环境/资源障碍，也不需要人工决策，
+            # 只是在 Value Gate 规则下找不到分数达标、非重复的候选——这是正常的
+            # "当前没有高价值任务"信号，不是阻塞，不需要（也不应该）再消耗剩余
+            # 候选名额去反复确认同一个结论，立即正常停止。
+            logger.info("Planner 判断当前没有符合 Value Gate 的高价值任务。")
+            msg = (
+                f"Planner 在 Candidate {candidate_number}/{PLANNER_CANDIDATE_LIMIT} 判断当前没有符合 "
+                f"Value Gate 的高价值任务，非阻塞场景，正常停止。原因：{candidate_task.rationale}"
+            )
+            logger.info(msg)
+            return finalize("NO_HIGH_VALUE_TASK", msg, EXIT_SUCCESS)
+
         # 候选去重：命中已知重复类别、标题归一化后相同、或目标文件完全一致，均
         # 视为同一候选的同义改写，直接判定为拒绝，防止 Planner 靠换页面/换措辞
         # 绕过已经被拒绝过的候选。
@@ -1123,8 +1136,8 @@ def main(argv: list[str] | None = None) -> int:
                 print("建议进入 Project Audit 或 V2 规划。")
             elif final_status == "NO_HIGH_VALUE_TASK":
                 print(
-                    f"Task #{task_number}：{PLANNER_CANDIDATE_LIMIT} 个候选均未通过 Value Gate，"
-                    "本轮未找到符合条件的高价值任务，未调用 Claude Code，未修改业务代码，未创建业务 Commit。"
+                    f"Task #{task_number}：当前没有符合 Value Gate 的高价值任务（非阻塞场景），"
+                    "未调用 Claude Code，未修改业务代码，未创建业务 Commit，Auto Dev 正常停止。"
                 )
             else:
                 print(f"Auto Dev 已停止（Task #{task_number}，最终状态：{final_status}）。")

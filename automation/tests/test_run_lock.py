@@ -333,7 +333,7 @@ class TestReleaseOnVariousExitPaths(LockTestCaseBase):
                 exit_code = orchestrator.main([])
         output = stdout.getvalue()
         self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
-        self.assertIn("个候选均未通过 Value Gate", output)
+        self.assertIn("当前没有符合 Value Gate 的高价值任务", output)
         self.assertFalse((repo / run_lock.LOCK_DIR_NAME / run_lock.LOCK_FILE_NAME).exists())
 
 

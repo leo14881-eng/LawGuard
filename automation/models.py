@@ -10,9 +10,15 @@ from typing import Any
 # LOW/MEDIUM/HIGH 为正常任务的风险分级；
 # DONE 表示当前项目已没有新的开发任务（正常结束）；
 # BLOCKED 表示存在可规划的开发方向，但由于权限、依赖、环境、资源不足，
-# 或 P-1/P0/P1/P2 治理原则要求（例如缺少可核验法律来源、涉及个案判断）
-# 而无法安全生成具体任务。
-RISK_LEVELS = {"LOW", "MEDIUM", "HIGH", "BLOCKED", "DONE"}
+# 或 P-1/P0/P1/P2 治理原则要求（例如缺少可核验法律来源、涉及个案判断），
+# 或需要人工做出产品/法律/安全决策，而无法安全生成具体任务——这是真正的
+# 阻塞场景，不包括"单纯找不到值得做的任务"。
+# NO_HIGH_VALUE_TASK（2026-07-26 新增）表示 Planner 没有权限/依赖/环境/资源
+# 障碍、也不需要人工决策，只是在 Value Gate 规则下找不到分数达标、非重复的
+# 候选任务——这是正常的"当前没有高价值任务"信号，不是阻塞，不应与 BLOCKED
+# 混用（历史上曾因两者语义混淆，把"没有高价值任务"误报为 BLOCKED，见
+# automation/orchestrator.py 的 Planner Candidate Loop 处理逻辑）。
+RISK_LEVELS = {"LOW", "MEDIUM", "HIGH", "BLOCKED", "DONE", "NO_HIGH_VALUE_TASK"}
 # 评审结论允许的取值
 REVIEW_VERDICTS = {"PASS", "FAIL", "BLOCKED"}
 

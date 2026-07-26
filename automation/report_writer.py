@@ -149,6 +149,21 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
 
     error_line = f"（错误信息：{report.error_message}）" if report.error_message else ""
 
+    # 最终状态语义说明（2026-07-26 新增）：NO_HIGH_VALUE_TASK 与 BLOCKED_BY_PLANNER
+    # 曾经被混用（历史真实案例：Planner 判断"没有高价值任务"却返回了 BLOCKED，
+    # 被误报为阻塞场景），报告中显式区分两者，避免人工排查时再次误判性质。
+    _FINAL_STATUS_EXPLANATIONS = {
+        "NO_HIGH_VALUE_TASK": (
+            "正常停止：当前没有符合 Value Gate 的高价值任务可以开发（不涉及权限/依赖/"
+            "环境/资源问题，也不需要人工决策），不是错误，也不是 BLOCKED。"
+        ),
+        "BLOCKED_BY_PLANNER": (
+            "阻塞：存在明确的开发方向，但因权限不足、依赖或资源缺失、环境不可用，或需要"
+            "人工做出产品/法律/安全决策而无法安全继续，需人工介入后才能推进。"
+        ),
+    }
+    final_status_explanation_line = _FINAL_STATUS_EXPLANATIONS.get(report.final_status, "")
+
     # Attempt 记录：report.review_attempts 中每一项覆盖 INITIAL/VALIDATION_FIX/REVIEW_FIX
     # 三种 Attempt 类型（字段含义见 automation/models.py 的 RunReport.review_attempts 注释）。
     attempt_blocks: list[str] = []
@@ -295,6 +310,7 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
 
 ## 13. 最终状态
 {report.final_status}
+{final_status_explanation_line}
 {error_line}
 
 ## 14. OpenAI Token 用量
