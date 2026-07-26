@@ -4,11 +4,14 @@ import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import SourceCitationCard from '../components/SourceCitationCard.vue'
 import PrintPageButton from '../components/PrintPageButton.vue'
 import PrintFooter from '../components/PrintFooter.vue'
+import TrustBanner from '../components/TrustBanner.vue'
 import { legalSources } from '../data/legal_sources'
 </script>
 
 <template>
   <div class="container section">
+    <TrustBanner variant="print" />
+
     <PageHeader
       title="法律来源与版本记录"
       description="本页面记录法护内容对应的法律依据来源、版本与核验状态，未完成核验的内容不会标注为已核验。"

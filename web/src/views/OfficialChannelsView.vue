@@ -2,6 +2,7 @@
 import ChannelCard from '../components/ChannelCard.vue'
 import NoticeBanner from '../components/NoticeBanner.vue'
 import SourceCitationCard from '../components/SourceCitationCard.vue'
+import TrustBanner from '../components/TrustBanner.vue'
 import type { StatusKind } from '../components/StatusBadge.vue'
 
 /**
@@ -50,6 +51,8 @@ const channelSources: ChannelSourceRecord[] = [
     <p class="lead">
       以下为一般性官方渠道说明与入口占位，具体链接与联系方式在核验前不作为正式官方地址展示。
     </p>
+
+    <TrustBanner variant="compact" />
 
     <NoticeBanner tone="caution" title="链接核验说明">
       <p>本页面暂不提供未经核验的具体网址或电话跳转链接，避免误导。核验完成后将更新为正式入口。</p>

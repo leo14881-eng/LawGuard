@@ -2,6 +2,7 @@
 import NoticeBanner from '../components/NoticeBanner.vue'
 import PrintPageButton from '../components/PrintPageButton.vue'
 import PrintFooter from '../components/PrintFooter.vue'
+import TrustBanner from '../components/TrustBanner.vue'
 
 const methods = [
   '核对文书上的姓名、身份信息与案件编号等基础信息是否准确。',
@@ -14,10 +15,14 @@ const methods = [
 
 <template>
   <div class="container section">
+    <TrustBanner variant="print" />
+
     <h1>文书核对清单</h1>
     <p class="lead">
       核对和签署法律文书是刑事诉讼中的重要环节。以下为一般性核对方法框架，具体条目正在整理并等待法律复核。
     </p>
+
+    <TrustBanner variant="compact" />
 
     <PrintPageButton class="documents-print" page-title="文书核对清单 - 法护 LawGuard" />
 

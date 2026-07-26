@@ -13,6 +13,9 @@ const githubUrl = 'https://github.com/leo14881-eng/LawGuard'
         <p class="footer__desc">
           面向刑事案件当事人及其家属的免费公益法律信息平台，帮助了解程序、核对法律依据、查找官方救济渠道。
         </p>
+        <p class="footer__desc footer__trust-line">
+          纯公益项目 · 永久免费 · 不会主动联系用户 · 不会收集个人信息 · 谨防诈骗
+        </p>
       </div>
 
       <nav class="footer__col footer__links" aria-label="页脚导航">
@@ -68,6 +71,11 @@ const githubUrl = 'https://github.com/leo14881-eng/LawGuard'
   font-size: 13px;
   color: var(--color-text-muted);
   max-width: 320px;
+}
+
+.footer__trust-line {
+  font-weight: 600;
+  color: var(--color-notice-text);
 }
 
 .footer__links {

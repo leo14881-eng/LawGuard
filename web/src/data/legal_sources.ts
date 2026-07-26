@@ -53,4 +53,17 @@ export const legalSources: LegalSource[] = [
     note: '如后续页面内容涉及相关司法解释，将在完成人工核验后再补充具体版本、施行日期与官方链接。',
     status: 'pending',
   },
+  {
+    id: 'mps-official-rules',
+    title: '公安部（部门规章发布机关）',
+    url: '待核验',
+    version: '待核验',
+    lastVerifiedDate: '待核验',
+    explanation:
+      '"被羁押后紧急行动指引"功能中涉及侦查阶段委托辩护人、转达委托要求等程序性说明，计划对照公安部发布的' +
+      '部门规章进行核验。该机构属于 LAWGUARD_SOT.md P0.2 允许的官方来源类别，但目前尚未完成具体条文核验，' +
+      '本记录仅用于标记候选来源，不作为已核验的法律程序引用。',
+    note: '如后续内容与公安部正式发布文本存在差异，以官方文本为准；官方链接完成核验前不提供可跳转地址。',
+    status: 'pending',
+  },
 ]

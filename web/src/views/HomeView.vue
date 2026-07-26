@@ -7,6 +7,7 @@ import ChannelCard from '../components/ChannelCard.vue'
 import AppCard from '../components/AppCard.vue'
 import NoticeBanner from '../components/NoticeBanner.vue'
 import LegalDisclaimer from '../components/LegalDisclaimer.vue'
+import TrustBanner from '../components/TrustBanner.vue'
 import { stages } from '../data/stages'
 
 const familySteps = [
@@ -60,7 +61,25 @@ const features = [
 
 <template>
   <div>
+    <div class="container trust-banner-slot">
+      <TrustBanner variant="full" />
+    </div>
+
     <HeroSection />
+
+    <section class="section emergency-cta-section">
+      <div class="container">
+        <div class="card emergency-cta">
+          <h2 class="emergency-cta__title">家人或恋人突然被羁押，我该怎么办？</h2>
+          <p class="emergency-cta__desc">
+            根据关系和案件状态生成下一步行动清单：当前身份通常能做什么、最应该联系谁、联系不到近亲属时还有哪些合法路径。
+          </p>
+          <RouterLink to="/emergency-guide" class="btn btn-primary emergency-cta__action">
+            开始生成行动指引
+          </RouterLink>
+        </div>
+      </div>
+    </section>
 
     <section class="section">
       <div class="container">
@@ -160,6 +179,10 @@ const features = [
 </template>
 
 <style scoped>
+.trust-banner-slot {
+  padding-top: var(--space-4);
+}
+
 .section__lead {
   color: var(--color-text-muted);
   font-size: 14px;
@@ -175,6 +198,33 @@ const features = [
   margin: 0 0 6px;
   font-size: 17px;
   color: var(--color-primary-dark);
+}
+
+.emergency-cta-section {
+  padding-top: var(--space-6);
+  padding-bottom: var(--space-6);
+}
+
+.emergency-cta {
+  border-left: 4px solid var(--color-primary);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.emergency-cta__title {
+  margin: 0;
+}
+
+.emergency-cta__desc {
+  margin: 0;
+  color: var(--color-text-muted);
+  max-width: 640px;
+}
+
+.emergency-cta__action {
+  align-self: flex-start;
 }
 
 .why-choose__desc {
