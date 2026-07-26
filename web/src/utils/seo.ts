@@ -87,3 +87,20 @@ export function applyRouteSeo(routeName: string | undefined, routePath: string):
   setMetaTag('name', 'twitter:description', entry.description)
   setMetaTag('name', 'twitter:image', ogImage)
 }
+
+/**
+ * 详情页（诉讼阶段详情/权利指引详情等）在 routeSeoMap 里只有一条通用兜底
+ * 文案（因为同一个路由 name 对应多个不同的 :id），页面组件应在 router.afterEach
+ * 触发 applyRouteSeo() 之后，再调用本函数用具体条目的标题/摘要覆盖 title、
+ * description、og/twitter 对应字段，避免"讯问过程中"和"审查起诉阶段"两个完全
+ * 不同的详情页共用一模一样的搜索结果标题与分享标题。canonical/og:url 不在这里
+ * 处理——它们只依赖当前路径，applyRouteSeo() 已经设置正确，无需重复。
+ */
+export function applyPageSeoOverride(overrides: { title: string; description: string }): void {
+  document.title = overrides.title
+  setMetaTag('name', 'description', overrides.description)
+  setMetaTag('property', 'og:title', overrides.title)
+  setMetaTag('property', 'og:description', overrides.description)
+  setMetaTag('name', 'twitter:title', overrides.title)
+  setMetaTag('name', 'twitter:description', overrides.description)
+}

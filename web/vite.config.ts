@@ -7,8 +7,36 @@ import { fileURLToPath } from 'node:url'
 
 const dirname = path.dirname(fileURLToPath(import.meta.url))
 
-/** 仅收录公开、稳定、可索引的页面，不包含结果页或带用户输入状态的路径。 */
-const PUBLIC_ROUTES = ['/', '/emergency-guide', '/stages', '/documents', '/official-channels', '/about', '/privacy']
+/**
+ * 仅收录公开、稳定、可索引的页面，不包含结果页或带用户输入状态的路径
+ * （如紧急指引的分步/结果状态本就不写入 URL，见 utils/seo.ts 的
+ * getShareableUrl）。
+ *
+ * STAGE_IDS / RIGHTS_GUIDE_IDS 必须与 `src/data/stages.ts` / `src/data/
+ * rightsGuide.ts` 的 id 保持一致（新增/删除阶段或权利指引条目时同步更新）。
+ * 没有直接 `import` 这两个数据文件，是因为 vite.config.ts 走的是
+ * tsconfig.node.json（module: nodenext），而 src/ 下的文件走
+ * tsconfig.app.json（bundler 模式），两者对相对导入是否需要文件扩展名的要求
+ * 冲突（nodenext 要求显式扩展名），跨项目导入会导致 vue-tsc -b 报错；用
+ * 一份显式同步的 id 列表比在构建配置里绕开这层类型检查更简单可靠。
+ */
+const STAGE_IDS = ['taken-or-summoned', 'interrogation', 'document-signing', 'prosecution-review', 'trial', 'post-verdict']
+const RIGHTS_GUIDE_IDS = STAGE_IDS
+
+const PUBLIC_ROUTES = [
+  '/',
+  '/emergency-guide',
+  '/stages',
+  ...STAGE_IDS.map((id) => `/stages/${id}`),
+  '/rights-guide',
+  ...RIGHTS_GUIDE_IDS.map((id) => `/rights-guide/${id}`),
+  '/documents',
+  '/official-channels',
+  '/about',
+  '/privacy',
+  '/disclaimer',
+  '/legal-sources',
+]
 
 /**
  * 生产构建时，如果配置了 VITE_SITE_URL，则：

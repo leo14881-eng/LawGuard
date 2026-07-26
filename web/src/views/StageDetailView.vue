@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import DetailPageLayout from '../components/DetailPageLayout.vue'
 import SourceCitationCard from '../components/SourceCitationCard.vue'
@@ -7,11 +7,29 @@ import PageHeader from '../components/PageHeader.vue'
 import { getStageById } from '../data/stages'
 import { legalSources } from '../data/legal_sources'
 import { statusToBadgeKind } from '../utils/statusToBadgeKind'
+import { applyPageSeoOverride } from '../utils/seo'
 
 const route = useRoute()
 const stage = computed(() => getStageById(String(route.params.id)))
 const sources = computed(
   () => stage.value?.legalSourceIds.map((id) => legalSources.find((source) => source.id === id)).filter(Boolean) ?? []
+)
+
+/**
+ * routeSeoMap 里 stage-detail 只有一条通用兜底文案（同一路由 name 对应 6 个
+ * 不同阶段），这里用具体阶段的标题/摘要覆盖，避免 6 个详情页共用一模一样的
+ * 搜索结果标题和分享标题。
+ */
+watch(
+  stage,
+  (value) => {
+    if (!value) return
+    applyPageSeoOverride({
+      title: `${value.name} - 诉讼阶段详情｜LawGuard`,
+      description: value.summary,
+    })
+  },
+  { immediate: true }
 )
 </script>
 

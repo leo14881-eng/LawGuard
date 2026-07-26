@@ -57,7 +57,10 @@ task-003: feat: 首页新增 QuickNavCard 快速导航区块并嵌入 HomeView�
 | 浏览器打印 / Print CSS | VERIFIED | `PrintPageButton.vue`/`PrintFooter.vue`/`style.css` `@media print` | Playwright `emulateMedia('print')` 截图人工检查（无自动化断言，jsdom 不便模拟打印渲染） | 2026-07-26 | 未引入服务端 PDF 生成 |
 | 中文 document.title / html lang="zh-CN" | VERIFIED | `index.html`、`PrintPageButton.vue` 的 `pageTitle` prop | Playwright 脚本验证打印前后 title 切换与恢复正确 | 2026-07-26 | — |
 | 法律来源核验（紧急指引相关 10 项规则） | IMPLEMENTED（内容为一般性表述，标注"待法律复核"） | `data/legal_sources.ts` 新增 `mps-official-rules`；复用既有 `npc-official-law` | 未经执业律师逐条核验 | 2026-07-26（待核验） | 值班律师/法律援助的具体来源类别（司法部相关规章）尚未在 P0.2 允许清单中确认，措辞已保守处理，未归为已核验 |
-| 分享 LawGuard（navigator.share/复制链接/二维码/分享图片/OG/SEO 全套） | PLANNED | — | — | — | 本次审计明确不开发；见新对话中的独立需求，尚未开始编码 |
+| 分享 LawGuard（navigator.share/复制链接/二维码/分享图片） | VERIFIED（本行此前长期标注 PLANNED"尚未开始编码"，与实际代码不符，本次核实后更正） | `components/SharePanel.vue`（`utils/shareCard.ts` 本地生成分享卡片图片、`utils/downloadDataUrl.ts` 本地下载、`qrcode` 库本地生成二维码），已接入首页及绝大多数内容页 | `npm run build` 通过；人工核实分享/复制链接/二维码/下载图片四个入口在多个页面正常工作 | 2026-07-26 | 全部本地生成，不调用第三方在线接口，不采集分享行为数据 |
+| SEO 基础设施（title/description/OG/Twitter/canonical/JSON-LD/robots/sitemap） | VERIFIED（同上，此前误标 PLANNED） | `utils/seo.ts`（`applyRouteSeo` 由 `router.afterEach` 驱动）、`data/seo.ts`（各路由 title/description）、`composables/useJsonLd.ts`（首页 `WebSite` 结构化数据）、`vite.config.ts` 的 `siteFilesPlugin`（`VITE_SITE_URL` 配置后生成 `robots.txt` 的 Sitemap 行与 `sitemap.xml`） | `npm run build` 通过；设置 `VITE_SITE_URL` 后人工核实 `dist/sitemap.xml`/`dist/robots.txt` 内容正确 | 2026-07-26 | — |
+| 详情页动态 SEO（诉讼阶段详情/权利指引详情） | VERIFIED | 新增 `utils/seo.ts` 的 `applyPageSeoOverride()`，`StageDetailView.vue`/`RightsGuideDetailView.vue` 在 `watch(stage/entry, ..., {immediate:true})` 里用具体条目标题/摘要覆盖 `routeSeoMap` 里 `stage-detail`/`rights-guide-detail` 的通用兜底文案 | Playwright 人工核实 `/stages/trial` 与 `/stages/interrogation` 等不同详情页的 `document.title`/`og:title`/`description` 各不相同、准确对应当前条目 | 2026-07-26 | 此前 6 个诉讼阶段详情页、6 个权利指引详情页分别共用同一条通用标题，搜索结果/分享标题无法区分具体条目 |
+| sitemap.xml 路由覆盖 | VERIFIED | `vite.config.ts` 的 `PUBLIC_ROUTES` 补齐 `/legal-sources`、`/disclaimer`、`/rights-guide`，并新增 `STAGE_IDS`/`RIGHTS_GUIDE_IDS` 生成全部 12 个详情页 URL（`/stages/:id`、`/rights-guide/:id`） | 设置 `VITE_SITE_URL` 构建后人工核实 `dist/sitemap.xml` 含 22 条 URL，均为绝对地址 | 2026-07-26 | 此前遗漏 3 个静态页面与全部 12 个详情页；`STAGE_IDS`/`RIGHTS_GUIDE_IDS` 需与 `data/stages.ts`/`data/rightsGuide.ts` 手动保持同步（未直接 import，避免 `vite.config.ts` 所属 `tsconfig.node.json`(nodenext) 与 `src/` 所属 `tsconfig.app.json`(bundler) 的模块解析规则冲突导致 `vue-tsc -b` 报错），已在代码注释中说明 |
 | 本地全文搜索（V1 功能范围第 7 项） | PLANNED | — | — | — | 仅 `AppEmptyState.vue` 注释提及"未来的本地全文搜索功能"，无实际实现 |
 | 首页信息层级重设计 | VERIFIED | `HomeView.vue`/`HeroSection.vue`/`TrustBanner.vue`/`QuickNavCard.vue`/`AppFooter.vue` | 29 个前端测试通过；`npm run build` 通过；桌面 1440/平板 768/移动 375 三档 Playwright 截图确认无横向滚动、标题无孤字换行、Hero 在平板正确切换上下布局 | 2026-07-26 | Trust Banner 由大黄框改为紧凑单行+可展开；Hero 改左右两栏；新增 4 张任务卡替代原快速导航；移除首页重复的紧急指引 CTA 大卡片 |
 | 全站 Design System 审计与组件统一 | VERIFIED（审计范围内的 10 项发现已处理完成；未展开的部分见备注） | 审计发现见本次会话记录；修复：`style.css` 新增 `--header-height` 与全局 `.lead` 类、删除零引用的 `FeatureCard.vue`、`StageCard.vue`/`ChannelCard.vue` 改用 `.card--interactive` 与既有 Token、`StagesView`/`DocumentsView`/`OfficialChannelsView`/`AboutView`/`EmergencyGuideView`/`PrivacyView` 统一改用 `PageHeader`、`AboutView` 免责声明与 `LegalDisclaimer` 合并去重、`NoticeBanner` 纯状态说明由 caution 改为 info | `npm run build`/`npm run test`（29 项）通过；桌面/移动端 6 个页面 Playwright 截图人工检查 | 2026-07-26 | 未做的部分（保留为待办，未强行推进）：未对每种"页面类型"建立独立骨架模板文件，仅在 LAWGUARD_SOT.md 12.3 节做文字规范；ComingSoonView 的少量魔法数（`80px 20px`）未处理，风险低、未纳入本轮 |
@@ -85,5 +88,6 @@ NoticeBanner 与 `LegalDisclaimer` 内容重叠（已合并）。
 意见声明）三者职责已在 LAWGUARD_SOT.md 12.2 节明确，未再发现混用。当前所有路由均
 对应实际存在且启用的页面组件，容器宽度（`--max-width: 1200px`）与响应式断点
 （640/960px）全站统一，未发现例外。
-SEO 相关信息（title/description/OpenGraph/canonical/robots/sitemap）目前只有基础
-`<title>`/`<meta description>`，其余项均为 `PLANNED`，尚未散落形成冲突（因为尚未存在）。
+SEO 相关信息（title/description/OpenGraph/canonical/robots/sitemap/JSON-LD）已实现
+（见上方功能状态表"SEO 基础设施"一行，此前本节留下的"尚未存在"记录已过期，2026-07-26
+核实并更正）。

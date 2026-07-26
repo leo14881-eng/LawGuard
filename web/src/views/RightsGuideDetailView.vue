@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import DetailPageLayout from '../components/DetailPageLayout.vue'
 import SourceCitationCard from '../components/SourceCitationCard.vue'
@@ -7,11 +7,26 @@ import PageHeader from '../components/PageHeader.vue'
 import { getRightsGuideById } from '../data/rightsGuide'
 import { legalSources } from '../data/legal_sources'
 import { statusToBadgeKind } from '../utils/statusToBadgeKind'
+import { applyPageSeoOverride } from '../utils/seo'
 
 const route = useRoute()
 const entry = computed(() => getRightsGuideById(String(route.params.id)))
 const sources = computed(
   () => entry.value?.legalSourceIds.map((id) => legalSources.find((source) => source.id === id)).filter(Boolean) ?? []
+)
+
+/** 同 StageDetailView：用具体条目的标题/摘要覆盖通用兜底文案，避免 6 个
+ *  权利指引详情页共用一模一样的搜索结果标题和分享标题。 */
+watch(
+  entry,
+  (value) => {
+    if (!value) return
+    applyPageSeoOverride({
+      title: `${value.title}｜LawGuard`,
+      description: value.summary,
+    })
+  },
+  { immediate: true }
 )
 </script>
 
