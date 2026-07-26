@@ -4,8 +4,35 @@ import QuickNavCard from '../components/QuickNavCard.vue'
 import StageCard from '../components/StageCard.vue'
 import FeatureCard from '../components/FeatureCard.vue'
 import ChannelCard from '../components/ChannelCard.vue'
+import AppCard from '../components/AppCard.vue'
+import NoticeBanner from '../components/NoticeBanner.vue'
 import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import { stages } from '../data/stages'
+
+const familySteps = [
+  {
+    index: '1',
+    title: '确认案件当前阶段',
+    description: '根据拘留通知书、逮捕通知书、起诉书、判决书或办案机关告知的信息，判断案件所处阶段。',
+  },
+  {
+    index: '2',
+    title: '查看并核对官方信息',
+    description: '阅读一般性权利说明、程序期限、法律依据和官方救济渠道。',
+  },
+  {
+    index: '3',
+    title: '保存、打印或与律师沟通',
+    description: '将相关页面保存或打印，作为与律师、法律援助机构或办案机关沟通时的信息参考。',
+  },
+]
+
+const whyChoose = [
+  { title: '官方法律来源', description: '内容对应官方公开法律文本，标注来源与核验状态。' },
+  { title: '持续更新', description: '跟踪法律法规变化，及时标记待复核内容。' },
+  { title: '免费公益', description: '完全免费使用，不收费、不收集用户材料。' },
+  { title: '权利指引', description: '按诉讼阶段梳理权利要点，通俗易懂。' },
+]
 
 const features = [
   {
@@ -40,6 +67,37 @@ const features = [
         <h2 id="quick-nav-heading">快速导航</h2>
         <p class="section__lead">常用入口一步直达，方便快速查看官方渠道、法律依据与诉讼阶段。</p>
         <QuickNavCard heading-id="quick-nav-heading" />
+      </div>
+    </section>
+
+    <section class="section section-alt">
+      <div class="container">
+        <h2>家属如何使用 LawGuard</h2>
+        <div class="grid grid-3">
+          <AppCard v-for="step in familySteps" :key="step.title" class="family-step">
+            <span class="family-step__index" aria-hidden="true">{{ step.index }}</span>
+            <h3 class="family-step__title">{{ step.title }}</h3>
+            <p class="family-step__desc">{{ step.description }}</p>
+          </AppCard>
+        </div>
+        <NoticeBanner tone="caution" class="family-step__notice">
+          <p>
+            被羁押人员通常无法自由访问互联网。家属可以保存或打印相关信息，但是否可以寄送、转交或在会见时使用，
+            应以具体监管场所和办案机关的现行规定为准。
+          </p>
+        </NoticeBanner>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>为什么选择 LawGuard</h2>
+        <div class="grid grid-4">
+          <AppCard v-for="item in whyChoose" :key="item.title" class="why-choose__item">
+            <h3 class="why-choose__title">{{ item.title }}</h3>
+            <p class="why-choose__desc">{{ item.description }}</p>
+          </AppCard>
+        </div>
       </div>
     </section>
 
@@ -111,5 +169,47 @@ const features = [
 
 .section__more {
   margin-top: 20px;
+}
+
+.why-choose__title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  color: var(--color-primary-dark);
+}
+
+.why-choose__desc {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.family-step__index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: var(--space-3);
+}
+
+.family-step__title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  color: var(--color-primary-dark);
+}
+
+.family-step__desc {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.family-step__notice {
+  margin-top: var(--space-5);
 }
 </style>

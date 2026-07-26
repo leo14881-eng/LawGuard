@@ -120,7 +120,8 @@ function closeNav() {
 }
 
 .header__link {
-  padding: 10px 4px;
+  padding: 10px 10px;
+  border-radius: var(--radius-sm);
   color: var(--color-text);
   text-decoration: none;
   font-size: 15px;
@@ -131,9 +132,11 @@ function closeNav() {
   border-bottom: none;
 }
 
+/* 当前页面高亮：蓝色背景 + 蓝色文字，让用户清楚知道自己在哪个页面。 */
 .header__link.router-link-active {
   color: var(--color-primary);
   font-weight: 700;
+  background: var(--color-surface);
 }
 
 @media (min-width: 960px) {
@@ -147,11 +150,11 @@ function closeNav() {
     position: static;
     border: none;
     padding: 0;
-    gap: 28px;
+    gap: 20px;
   }
 
   .header__link {
-    padding: 0;
+    padding: 6px 12px;
     border-bottom: none;
   }
 }

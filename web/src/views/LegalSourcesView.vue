@@ -2,6 +2,8 @@
 import PageHeader from '../components/PageHeader.vue'
 import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import SourceCitationCard from '../components/SourceCitationCard.vue'
+import PrintPageButton from '../components/PrintPageButton.vue'
+import PrintFooter from '../components/PrintFooter.vue'
 import { legalSources } from '../data/legal_sources'
 </script>
 
@@ -10,7 +12,11 @@ import { legalSources } from '../data/legal_sources'
     <PageHeader
       title="法律来源与版本记录"
       description="本页面记录法护内容对应的法律依据来源、版本与核验状态，未完成核验的内容不会标注为已核验。"
-    />
+    >
+      <template #actions>
+        <PrintPageButton page-title="法律来源与版本记录 - 法护 LawGuard" />
+      </template>
+    </PageHeader>
 
     <LegalDisclaimer />
 
@@ -53,6 +59,8 @@ import { legalSources } from '../data/legal_sources'
         </SourceCitationCard>
       </div>
     </section>
+
+    <PrintFooter />
   </div>
 </template>
 

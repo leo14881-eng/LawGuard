@@ -317,3 +317,81 @@ ul {
     gap: var(--space-6);
   }
 }
+
+/* ===== 打印样式 =====
+   适用于权利指引、诉讼阶段说明、法律来源详情等"适合阅读"的页面：
+   打印时隐藏顶部导航、页脚、交互按钮与其它与正文无关的元素，保留标题、正文、
+   法律依据、官方来源、版本、核验日期与免责声明，并统一显示强制性打印页脚
+   （见 PrintFooter 组件）。颜色统一改为黑白，保证黑白打印机下依然清晰。 */
+/* .no-print：屏幕上正常显示，仅在下方 @media print 中隐藏。 */
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  .header,
+  .footer,
+  .no-print,
+  .btn {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  h1,
+  h2,
+  h3 {
+    color: #000;
+  }
+
+  /* !important 用于覆盖各卡片组件（如 StageCard/QuickNavCard）自身 scoped
+     样式中对链接颜色的设定，保证打印版本中所有文字统一为黑色，黑白打印清晰。 */
+  a {
+    color: #000 !important;
+    text-decoration: underline;
+  }
+
+  .card,
+  .card--interactive {
+    box-shadow: none !important;
+    border: 1px solid #999;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-footer {
+    display: block !important;
+    margin-top: var(--space-6);
+    padding-top: var(--space-3);
+    border-top: 1px solid #999;
+    font-size: 11px;
+    color: #333;
+  }
+
+  .print-footer__brand {
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: #000;
+  }
+
+  .print-footer__meta {
+    margin-top: 6px;
+    color: #555;
+  }
+
+  /* 官方来源链接在打印版本中补充显示完整网址，便于纸质核对 */
+  .source-card__link[href]::after {
+    content: ' (' attr(href) ')';
+    font-size: 10px;
+    color: #333;
+    word-break: break-all;
+  }
+}

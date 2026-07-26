@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import NoticeBanner from '../components/NoticeBanner.vue'
+import PrintPageButton from '../components/PrintPageButton.vue'
+import PrintFooter from '../components/PrintFooter.vue'
 
 const methods = [
   '核对文书上的姓名、身份信息与案件编号等基础信息是否准确。',
@@ -16,6 +18,8 @@ const methods = [
     <p class="lead">
       核对和签署法律文书是刑事诉讼中的重要环节。以下为一般性核对方法框架，具体条目正在整理并等待法律复核。
     </p>
+
+    <PrintPageButton class="documents-print" page-title="文书核对清单 - 法护 LawGuard" />
 
     <NoticeBanner tone="caution" title="内容状态说明">
       <p>本页面内容为一般性方法框架，不针对任何具体文书或具体案件给出结论，具体条目待法律复核后正式发布。</p>
@@ -36,6 +40,8 @@ const methods = [
         寻求帮助。
       </p>
     </section>
+
+    <PrintFooter />
   </div>
 </template>
 
@@ -44,6 +50,10 @@ const methods = [
   color: var(--color-text-muted);
   max-width: 640px;
   margin-bottom: 20px;
+}
+
+.documents-print {
+  margin-bottom: var(--space-5);
 }
 
 .list li {
