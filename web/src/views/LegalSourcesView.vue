@@ -42,7 +42,7 @@ import { legalSources } from '../data/legal_sources'
           均标注为"待核验"，不作为已核验的法律条文引用。
         </p>
         <div
-          class="grid grid-2 source-list"
+          class="grid grid-2 grid-3 legal-sources-grid"
           role="list"
           aria-describedby="version-record-desc"
         >
@@ -93,17 +93,6 @@ import { legalSources } from '../data/legal_sources'
   border: 0;
 }
 
-/* 平板（>= 640px）：来源卡片列表间距略微放宽 */
-@media (min-width: 640px) {
-  .source-list {
-    gap: var(--space-5);
-  }
-}
-
-/* 桌面端（>= 960px）：来源卡片列表间距进一步放宽，呼应卡片内边距的增加 */
-@media (min-width: 960px) {
-  .source-list {
-    gap: var(--space-6);
-  }
-}
+/* 来源卡片网格的响应式列数与间距节奏统一在 style.css 的
+   .legal-sources-grid 规则中维护，此处不再重复定义。 */
 </style>

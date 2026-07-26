@@ -411,6 +411,25 @@ ul {
   }
 }
 
+/* Official Legal Sources 页面（官方来源网格）：容器同时声明 grid grid-2 grid-3
+   三个类，复用全局列数规则实现移动端单列 / 640px 双列 / 960px 三列；
+   此处仅按断点补充间距节奏，不新增独立断点数值或自定义颜色、圆角。 */
+.legal-sources-grid {
+  gap: var(--space-4);
+}
+
+@media (min-width: 640px) {
+  .legal-sources-grid {
+    gap: var(--space-5);
+  }
+}
+
+@media (min-width: 960px) {
+  .legal-sources-grid {
+    gap: var(--space-6);
+  }
+}
+
 /* ===== 打印样式 =====
    适用于权利指引、诉讼阶段说明、法律来源详情等"适合阅读"的页面：
    打印时隐藏顶部导航、页脚、交互按钮与其它与正文无关的元素，保留标题、正文、
