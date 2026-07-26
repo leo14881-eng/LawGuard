@@ -109,6 +109,24 @@ const trustPoints = [
         </AppCard>
 
         <InteractiveNavigator v-else @close="showNavigator = false" />
+
+        <AppCard class="navigator-entry navigator-entry--page">
+          <div class="navigator-entry__body">
+            <div class="navigator-entry__text">
+              <h3 class="navigator-entry__title">交互式个人处境导航工具入口</h3>
+              <p class="navigator-entry__desc">
+                打开独立的分步引导页面，结合诉讼阶段与权利指引静态数据查看更完整的对照速览。
+              </p>
+            </div>
+            <RouterLink
+              to="/interactive-navigator"
+              class="btn btn-secondary"
+              aria-label="进入交互式个人处境导航工具独立页面"
+            >
+              进入导航工具页面
+            </RouterLink>
+          </div>
+        </AppCard>
       </div>
     </section>
 
@@ -252,6 +270,10 @@ const trustPoints = [
     align-items: center;
     justify-content: space-between;
   }
+}
+
+.navigator-entry--page {
+  margin-top: var(--space-4);
 }
 
 /* 使用步骤：横向带状条，顶部色条 + 编号，替代原先三张等权卡片 */

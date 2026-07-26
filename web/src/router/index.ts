@@ -68,6 +68,11 @@ const router = createRouter({
       component: () => import('../views/EmergencyGuideView.vue'),
     },
     {
+      path: '/interactive-navigator',
+      name: 'interactive-navigator',
+      component: () => import('../views/InteractiveNavigatorView.vue'),
+    },
+    {
       // 未匹配到任何已知路径时展示 404 页面。
       path: '/:pathMatch(.*)*',
       name: 'not-found',
