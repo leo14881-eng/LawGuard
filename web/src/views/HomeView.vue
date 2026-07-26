@@ -8,11 +8,17 @@ import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import TrustBanner from '../components/TrustBanner.vue'
 import SharePanel from '../components/SharePanel.vue'
 import PrintPageButton from '../components/PrintPageButton.vue'
+import AppCard from '../components/AppCard.vue'
+import AppButton from '../components/AppButton.vue'
+import InteractiveNavigator from '../components/InteractiveNavigator.vue'
 import { stages } from '../data/stages'
 import { useJsonLd } from '../composables/useJsonLd'
 import { getSiteUrl } from '../utils/seo'
+import { ref } from 'vue'
 
 const siteUrl = getSiteUrl()
+/** 是否展开首页互动导航工具（问答式入口，见 InteractiveNavigator） */
+const showNavigator = ref(false)
 useJsonLd({
   '@context': 'https://schema.org',
   '@type': 'WebSite',
@@ -80,6 +86,29 @@ const trustPoints = [
       <div class="container">
         <h2 id="quick-nav-heading">现在，你可能需要做这些事</h2>
         <QuickNavCard heading-id="quick-nav-heading" />
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="navigator-heading">
+      <div class="container">
+        <h2 id="navigator-heading">不确定现在处于哪个阶段？</h2>
+        <p class="section__lead">
+          回答一个简单问题，快速定位到对应阶段的说明和权利指引入口，仅作为入口参考，不构成对具体案件的判断。
+        </p>
+
+        <AppCard v-if="!showNavigator" interactive class="navigator-entry">
+          <div class="navigator-entry__body">
+            <div class="navigator-entry__text">
+              <h3 class="navigator-entry__title">互动导航工具</h3>
+              <p class="navigator-entry__desc">选择当前最符合的情况，快速跳转到对应内容。</p>
+            </div>
+            <AppButton aria-label="开始互动导航，选择当前所处情况" @click="showNavigator = true">
+              开始互动导航
+            </AppButton>
+          </div>
+        </AppCard>
+
+        <InteractiveNavigator v-else @close="showNavigator = false" />
       </div>
     </section>
 
@@ -195,6 +224,34 @@ const trustPoints = [
 
 .section__more {
   margin-top: 20px;
+}
+
+/* 互动导航入口卡片：折叠态展示，点击后替换为 InteractiveNavigator */
+.navigator-entry__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.navigator-entry__title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-block-title);
+  color: var(--color-primary-dark);
+}
+
+.navigator-entry__desc {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  color: var(--color-text-muted);
+}
+
+@media (min-width: 640px) {
+  .navigator-entry__body {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
 }
 
 /* 使用步骤：横向带状条，顶部色条 + 编号，替代原先三张等权卡片 */
