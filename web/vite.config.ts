@@ -51,6 +51,10 @@ export default defineConfig(({ mode }) => {
     plugins: [vue(), siteFilesPlugin(env.VITE_SITE_URL)],
     test: {
       environment: 'jsdom',
+      // e2e/ 下是 @playwright/test 用例（真实浏览器，需配合 `npm run test:e2e`
+      // 单独运行），不属于 Vitest/jsdom 单元测试范围，需排除，否则会被 Vitest
+      // 默认的 *.spec.ts 匹配规则一并收录导致报错。
+      exclude: ['node_modules/**', 'e2e/**'],
     },
   }
 })
