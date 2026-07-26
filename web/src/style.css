@@ -83,6 +83,11 @@
 
   --max-width: 1200px;
 
+  /* ===== 布局尺寸 =====
+     全站唯一的 Header 高度来源，AppHeader.vue 的 height/top 定位均引用本变量，
+     禁止在组件内重复写死同一数值（历史上曾在两处各自硬编码 60px）。 */
+  --header-height: 60px;
+
   /* ===== 响应式断点（文档化数值；@media 中直接书写，CSS 变量不能用于媒体查询） =====
      手机：< 640px（默认，移动端优先）
      平板：>= 640px
@@ -172,6 +177,15 @@ ul {
 
 .section-alt {
   background: var(--color-surface-alt);
+}
+
+/* 页面级引导段落（页面标题下方的一句话说明）：此前在 StagesView / DocumentsView /
+   OfficialChannelsView / LegalSourcesView / EmergencyGuideView 等页面各自用相同的
+   scoped 样式重复定义，统一收编为全局类，避免同一段样式散落在 5 个文件里。 */
+.lead {
+  color: var(--color-text-muted);
+  max-width: 640px;
+  margin-bottom: var(--space-5);
 }
 
 /* 按钮：统一 default / hover / focus / disabled / loading 状态，

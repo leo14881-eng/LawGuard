@@ -127,6 +127,9 @@ npm run preview   # 本地预览生产构建
 项目只长期维护 `CLAUDE.md` 与 `LAWGUARD_SOT.md` 两份项目级文档。
 禁止创建 SESSION_SUMMARY.md、单独架构/产品说明文档、每日总结文档或其他无必要的 Markdown 文件。
 `web/README.md` 为脚手架自带说明，可保留，但项目事实以 `LAWGUARD_SOT.md` 为准。
+根目录 `README.md` 为标准仓库入口说明（项目简介、快速开始命令、文档索引），面向
+GitHub 访问者与新贡献者，只做导航与速览，不重复记录产品事实或开发进度，产品事实
+仍以 `LAWGUARD_SOT.md` 为准、开发进度仍以 `docs/project/AUTODEV_PROGRESS.md` 为准。
 `docs/project/AUTODEV_PROGRESS.md` 为唯一例外：它是 Auto Dev 自动开发系统的进度台账
 （Last Update / Last Commit / Completed Tasks / Current Task / Next Candidate Tasks /
 Known Issues），由 `automation/progress.py` 自动创建与维护，不属于"说明性 Markdown
