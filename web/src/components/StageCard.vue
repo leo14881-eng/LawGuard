@@ -7,7 +7,7 @@ defineProps<{
 </script>
 
 <template>
-  <RouterLink to="/coming-soon" class="stage-card card">
+  <RouterLink to="/coming-soon" class="stage-card card card--interactive">
     <span class="stage-card__index">{{ stage.order }}</span>
     <h3 class="stage-card__name">{{ stage.name }}</h3>
     <p class="stage-card__summary">{{ stage.summary }}</p>
@@ -16,17 +16,13 @@ defineProps<{
 </template>
 
 <style scoped>
+/* hover/focus 边框与阴影反馈统一由全局 .card--interactive 提供（见 style.css），
+   本组件不再自行重复定义 transition/hover 规则。 */
 .stage-card {
   display: flex;
   flex-direction: column;
   text-decoration: none;
   color: inherit;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.stage-card:hover {
-  border-color: var(--color-primary-light);
-  box-shadow: var(--shadow-sm);
 }
 
 .stage-card__index {
@@ -38,25 +34,25 @@ defineProps<{
   border-radius: 50%;
   background: var(--color-primary);
   color: var(--color-text-inverse);
-  font-size: 13px;
+  font-size: var(--font-size-label);
   font-weight: 700;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 
 .stage-card__name {
-  margin: 0 0 8px;
-  font-size: 17px;
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-block-title);
 }
 
 .stage-card__summary {
-  font-size: 14px;
+  font-size: var(--font-size-caption);
   color: var(--color-text-muted);
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
   flex-grow: 1;
 }
 
 .stage-card__link {
-  font-size: 14px;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   color: var(--color-primary);
 }

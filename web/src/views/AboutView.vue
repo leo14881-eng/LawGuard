@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import NoticeBanner from '../components/NoticeBanner.vue'
+import PageHeader from '../components/PageHeader.vue'
 import TrustBanner from '../components/TrustBanner.vue'
+import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 
 const privacyPoints = [
   '纯公益',
@@ -35,7 +37,7 @@ const fraudBehaviors = [
 
 <template>
   <div class="container section">
-    <h1>关于法护 LawGuard</h1>
+    <PageHeader title="关于法护 LawGuard" />
 
     <TrustBanner variant="compact" />
 
@@ -71,10 +73,12 @@ const fraudBehaviors = [
     </section>
 
     <section class="section">
-      <NoticeBanner tone="caution" title="非官方与公益性质">
-        <p>本平台不属于政府机关，不属于公安机关、检察院、法院，不属于律师事务所或法律援助机构。</p>
-        <p>本平台不接受个案委托，不代理案件，不提供具体案件分析或辩护策略，不预测案件结果，不替代执业律师。</p>
-        <p>本平台不判断具体机关或人员是否违法，不推荐诉讼策略、辩护方案、举报方案或规避法律责任的方法。</p>
+      <LegalDisclaimer expanded />
+    </section>
+
+    <section class="section">
+      <NoticeBanner tone="info" title="其它非官方与公益说明">
+        <p>本平台不接受个案委托，不代理案件，不预测案件结果。</p>
         <p>本平台不收集案件信息，不允许用户上传材料，不提供在线咨询或 AI 聊天。</p>
         <p>本平台完全免费，当前版本不接受捐款。</p>
       </NoticeBanner>
@@ -102,11 +106,6 @@ const fraudBehaviors = [
 </template>
 
 <style scoped>
-.lead {
-  color: var(--color-text-muted);
-  max-width: 640px;
-}
-
 .privacy-list {
   list-style: none;
   padding: 0;

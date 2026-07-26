@@ -43,7 +43,7 @@ AutoDev(task-003): feat: 首页新增 QuickNavCard 快速导航区块并嵌入 H
 | 打印页面第一页顶部公益/防诈骗声明 | VERIFIED | `TrustBanner.vue` variant="print"，接入 Stages/Documents/LegalSources/EmergencyGuideView | Playwright `emulateMedia('print')` 截图确认位于第一页顶部、双线黑白边框、未被移到底部 | 2026-07-26 | — |
 | 关于项目页公益/隐私/防诈骗声明 | VERIFIED | `AboutView.vue`"公益与隐私声明"（17 项 ✓）、"谨防诈骗"（7 项） | Playwright 截图人工检查 | 2026-07-26 | — |
 | Footer 公益信息 | VERIFIED | `AppFooter.vue` footer__trust-line | Playwright 截图人工检查 | 2026-07-26 | — |
-| 被羁押后紧急行动指引（整体功能） | VERIFIED | `web/src/views/EmergencyGuideView.vue` | 28 个 Vitest 单测/组件测试通过；`npm run build` 通过；Playwright 截图人工检查桌面/移动端/打印 | 2026-07-26 | 首页入口见 HomeView "emergency-cta" 区块，路由 `/emergency-guide` |
+| 被羁押后紧急行动指引（整体功能） | VERIFIED | `web/src/views/EmergencyGuideView.vue` | 29 个 Vitest 单测/组件测试通过；`npm run build` 通过；Playwright 截图人工检查桌面/平板/移动端/打印 | 2026-07-26 | 路由 `/emergency-guide`；首页入口见 Hero 主按钮"开始应急导航"与"你现在需要什么？"任务卡"家人刚被带走" |
 | 关系身份选择 / 羁押阶段选择 / 律师状态选择 | VERIFIED | `data/emergencyGuidance.ts` 选项数据 + `EmergencyGuideView.vue` 三步引导 | 同上 | 2026-07-26 | — |
 | 自动生成紧急行动清单 | VERIFIED | `buildTodayPriorities`/`getIdentityGuidance` 等纯函数（`emergencyGuidance.ts`） | `data/__tests__/emergencyGuidance.test.ts` 覆盖 8 个场景组合 | 2026-07-26 | 简单查表/条件分支拼接，非通用规则引擎 |
 | 未婚恋人/朋友/同事场景行动指引 | VERIFIED | `nonEligibleIdentityGuidance` | 同上 | 2026-07-26 | — |
@@ -58,11 +58,18 @@ AutoDev(task-003): feat: 首页新增 QuickNavCard 快速导航区块并嵌入 H
 | 法律来源核验（紧急指引相关 10 项规则） | IMPLEMENTED（内容为一般性表述，标注"待法律复核"） | `data/legal_sources.ts` 新增 `mps-official-rules`；复用既有 `npc-official-law` | 未经执业律师逐条核验 | 2026-07-26（待核验） | 值班律师/法律援助的具体来源类别（司法部相关规章）尚未在 P0.2 允许清单中确认，措辞已保守处理，未归为已核验 |
 | 分享 LawGuard（navigator.share/复制链接/二维码/分享图片/OG/SEO 全套） | PLANNED | — | — | — | 本次审计明确不开发；见新对话中的独立需求，尚未开始编码 |
 | 本地全文搜索（V1 功能范围第 7 项） | PLANNED | — | — | — | 仅 `AppEmptyState.vue` 注释提及"未来的本地全文搜索功能"，无实际实现 |
+| 首页信息层级重设计 | VERIFIED | `HomeView.vue`/`HeroSection.vue`/`TrustBanner.vue`/`QuickNavCard.vue`/`AppFooter.vue` | 29 个前端测试通过；`npm run build` 通过；桌面 1440/平板 768/移动 375 三档 Playwright 截图确认无横向滚动、标题无孤字换行、Hero 在平板正确切换上下布局 | 2026-07-26 | Trust Banner 由大黄框改为紧凑单行+可展开；Hero 改左右两栏；新增 4 张任务卡替代原快速导航；移除首页重复的紧急指引 CTA 大卡片 |
+| 全站 Design System 审计与组件统一 | VERIFIED（审计范围内的 10 项发现已处理完成；未展开的部分见备注） | 审计发现见本次会话记录；修复：`style.css` 新增 `--header-height` 与全局 `.lead` 类、删除零引用的 `FeatureCard.vue`、`StageCard.vue`/`ChannelCard.vue` 改用 `.card--interactive` 与既有 Token、`StagesView`/`DocumentsView`/`OfficialChannelsView`/`AboutView`/`EmergencyGuideView`/`PrivacyView` 统一改用 `PageHeader`、`AboutView` 免责声明与 `LegalDisclaimer` 合并去重、`NoticeBanner` 纯状态说明由 caution 改为 info | `npm run build`/`npm run test`（29 项）通过；桌面/移动端 6 个页面 Playwright 截图人工检查 | 2026-07-26 | 未做的部分（保留为待办，未强行推进）：未对每种"页面类型"建立独立骨架模板文件，仅在 LAWGUARD_SOT.md 12.3 节做文字规范；ComingSoonView 的少量魔法数（`80px 20px`）未处理，风险低、未纳入本轮 |
 
-### 重复实现检查结果（本次审计）
+### 重复实现检查结果（本次设计审计，2026-07-26）
 
-未发现同一用途的重复组件/重复数据模型/重复分享实现/已弃用但仍在路由中的旧页面。
+发现并已修复：`FeatureCard.vue`（零引用死组件，已删除）、`StageCard`/`FeatureCard`
+自写的 `.card:hover` 与全局 `.card--interactive` 逻辑重复（已改用后者）、`.lead`
+样式在 5 个文件重复声明（已收编为全局类）、`AboutView` 的"非官方与公益性质"
+NoticeBanner 与 `LegalDisclaimer` 内容重叠（已合并）。
 `TrustBanner`（公益声明）、`NoticeBanner`（通用提示）、`LegalDisclaimer`（P-1 非法律
-意见声明）三者用途不同，未重复。当前所有路由均对应实际存在且启用的页面组件。
+意见声明）三者职责已在 LAWGUARD_SOT.md 12.2 节明确，未再发现混用。当前所有路由均
+对应实际存在且启用的页面组件，容器宽度（`--max-width: 1200px`）与响应式断点
+（640/960px）全站统一，未发现例外。
 SEO 相关信息（title/description/OpenGraph/canonical/robots/sitemap）目前只有基础
 `<title>`/`<meta description>`，其余项均为 `PLANNED`，尚未散落形成冲突（因为尚未存在）。

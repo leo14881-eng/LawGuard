@@ -68,12 +68,6 @@ import { legalSources } from '../data/legal_sources'
 </template>
 
 <style scoped>
-.lead {
-  color: var(--color-text-muted);
-  max-width: 640px;
-  margin-bottom: var(--space-5);
-}
-
 .source-explanation {
   margin: 0 0 var(--space-2);
 }

@@ -8,6 +8,7 @@ import { computed, ref } from 'vue'
 import StepProgress from '../components/StepProgress.vue'
 import AppAccordion from '../components/AppAccordion.vue'
 import NoticeBanner from '../components/NoticeBanner.vue'
+import PageHeader from '../components/PageHeader.vue'
 import LegalDisclaimer from '../components/LegalDisclaimer.vue'
 import TrustBanner from '../components/TrustBanner.vue'
 import PrintPageButton from '../components/PrintPageButton.vue'
@@ -113,14 +114,14 @@ const referencedLegalSources = computed(() =>
   <div class="container section">
     <TrustBanner variant="print" />
 
-    <h1>被羁押后紧急行动指引</h1>
-    <p class="lead">
-      家人、恋人或朋友突然被羁押，不知道谁可以委托律师？根据关系和案件状态生成下一步行动清单。
-    </p>
+    <PageHeader
+      title="被羁押后紧急行动指引"
+      description="家人、恋人或朋友突然被羁押，不知道谁可以委托律师？根据关系和案件状态生成下一步行动清单。"
+    />
 
     <TrustBanner variant="compact" />
 
-    <NoticeBanner tone="caution" title="使用前请了解">
+    <NoticeBanner tone="info" title="使用前请了解">
       <p>本页面仅提供一般性程序信息，不判断具体身份资格或案件情况，不能替代律师、法律援助机构或办案机关的正式意见。</p>
     </NoticeBanner>
 
@@ -344,12 +345,6 @@ const referencedLegalSources = computed(() =>
 </template>
 
 <style scoped>
-.lead {
-  color: var(--color-text-muted);
-  max-width: 640px;
-  margin-bottom: var(--space-4);
-}
-
 .wizard-step__hint {
   color: var(--color-text-muted);
   font-size: var(--font-size-caption);

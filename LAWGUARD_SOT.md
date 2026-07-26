@@ -357,6 +357,47 @@ interface Stage {
 - 不使用外部图片依赖、不使用在线字体、不引入第三方统计脚本。
 - 文字清晰、按钮可访问、对比度合理。
 
+### 12.1 Design Tokens（唯一来源：`web/src/style.css`）
+
+全站样式必须复用 `web/src/style.css` 中已定义的 Design Tokens，禁止页面或组件自行
+硬编码颜色、字号、间距、圆角、阴影数值。已建立的 token 分类：
+
+- 颜色：`--color-primary(-dark/-light)`、`--color-surface(-alt)`、`--color-bg`、
+  `--color-border(-strong)`、`--color-text(-muted/-inverse)`、`--color-notice-*`
+  （浅黄色系，仅用于真正需要用户注意的安全提醒）、
+  `--color-success/warning/error/info/disabled-*`（低饱和语义色，红色仅用于真正的
+  错误/危险场景）；
+- 圆角：`--radius/-sm/-lg/-pill`；阴影：`--shadow-sm/-md`；
+- 间距：`--space-1` ~ `--space-16`（8px 基准 spacing scale）；
+- 字体：`--font-size-page-title/section-title/block-title/body/caption/label/metric`；
+- 布局：`--max-width: 1200px`（全站唯一内容容器宽度）、`--header-height: 60px`
+  （全站唯一 Header 高度来源，`AppHeader.vue` 的高度与定位均引用此变量，禁止重复
+  硬编码同一数值）；
+- 响应式断点：仅 640px（平板）/ 960px（桌面）两档，全站统一，禁止页面自定义其它
+  断点数值。
+
+### 12.2 统一组件职责（禁止混用）
+
+- `TrustBanner`：只用于"纯公益、永久免费、不主动联系、不收集个人信息、防诈骗"这
+  一组公益/安全声明，full（首页首屏）/compact（其它核心页面）/print（打印页第一页）
+  三种形态，文案统一在组件内维护，页面不得自行改写措辞。
+- `LegalDisclaimer`：只用于 P-1"非法律意见"边界声明（不判断案件、不评价机关或
+  律师行为、不推荐诉讼/辩护/举报策略），全站唯一来源，页面不得另写含义相近的
+  免责文案。
+- `NoticeBanner`：只用于一般性提示，默认 `tone="info"`；仅当内容确实构成需要用户
+  警惕的安全提醒（例如防诈骗提醒、监管场所规则提醒）时才使用 `tone="caution"`，
+  不得把"内容待复核""链接待核验"等纯状态说明也套上警示黄框。
+- `PageHeader`：详情页/列表页统一使用，取代各页面自行拼写 `<h1>` + 引导段落。
+- `.lead`（`style.css` 全局类）：页面内次级引导段落统一复用，不再各自用相同的
+  scoped 样式重复声明。
+
+### 12.3 页面骨架
+
+公开页面默认遵循：Header → Compact/Full Trust Banner → PageHeader（或首页 Hero）→
+主要内容 → 次级信息（可折叠） → 边界/免责声明 → Footer。新增页面前应先确认页面
+类型（首页 / 列表页 / 详情页 / 步骤页 / 结果页 / 官方渠道页 / 说明页 / 打印页），
+复用对应的现有实现作为模板，不自行发明新的页面结构。
+
 ## 13. 技术架构
 
 固定技术栈：
@@ -464,6 +505,16 @@ D:\SOFT\LawGuard
   状态见 `docs/project/AUTODEV_PROGRESS.md` 功能状态表，本条仅记录产品事实已确认。
 - 2026-07-26：引入前端单元/组件测试工具链（Vitest + @vue/test-utils + jsdom），`web/`
   新增 `npm run test` 脚本；新增开发前去重检查治理规则（见 `CLAUDE.md`）与本文件第 19 节。
+- 2026-07-26：完成首页信息层级重排（Trust Banner 收窄为紧凑条、Hero 改为左右两栏、
+  新增"你现在需要什么"任务卡、"使用边界"改为两栏轻量布局、Footer 精简为两层结构），
+  并完成全站设计审计：新增 `--header-height` Design Token，`.lead` 引导段落样式
+  收编为全局类，删除零引用的 `FeatureCard.vue`，`StageCard`/`ChannelCard` 改用
+  `.card--interactive` 与既有 Token（不再自写重复 hover 与魔法数），`StagesView`/
+  `DocumentsView`/`OfficialChannelsView`/`AboutView`/`EmergencyGuideView`/
+  `PrivacyView` 统一改用 `PageHeader`，`NoticeBanner` 的纯状态说明由
+  `tone="caution"` 更正为 `tone="info"`（真正的安全提醒仍保留 caution），
+  `AboutView` 与 `LegalDisclaimer` 重叠的免责文案合并去重。详见第 12.1～12.3 节
+  与 `docs/project/AUTODEV_PROGRESS.md` 功能状态表。
 
 ## 19. 打印与保存原则
 

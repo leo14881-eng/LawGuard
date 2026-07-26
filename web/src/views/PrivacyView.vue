@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 </script>
 
 <template>
   <div class="container section">
-    <h1>隐私说明</h1>
+    <PageHeader title="隐私说明" />
 
     <section class="section">
       <h2>不收集用户数据</h2>

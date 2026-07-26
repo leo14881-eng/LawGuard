@@ -22,18 +22,18 @@ defineProps<{
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
 }
 
 .channel-card__name {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--font-size-block-title);
 }
 
 .channel-card__desc {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-size-caption);
   color: var(--color-text-muted);
 }
 </style>

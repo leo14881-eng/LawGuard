@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import NoticeBanner from '../components/NoticeBanner.vue'
+import PageHeader from '../components/PageHeader.vue'
 import PrintPageButton from '../components/PrintPageButton.vue'
 import PrintFooter from '../components/PrintFooter.vue'
 import TrustBanner from '../components/TrustBanner.vue'
@@ -17,16 +18,18 @@ const methods = [
   <div class="container section">
     <TrustBanner variant="print" />
 
-    <h1>文书核对清单</h1>
-    <p class="lead">
-      核对和签署法律文书是刑事诉讼中的重要环节。以下为一般性核对方法框架，具体条目正在整理并等待法律复核。
-    </p>
+    <PageHeader
+      title="文书核对清单"
+      description="核对和签署法律文书是刑事诉讼中的重要环节。以下为一般性核对方法框架，具体条目正在整理并等待法律复核。"
+    >
+      <template #actions>
+        <PrintPageButton page-title="文书核对清单 - 法护 LawGuard" />
+      </template>
+    </PageHeader>
 
     <TrustBanner variant="compact" />
 
-    <PrintPageButton class="documents-print" page-title="文书核对清单 - 法护 LawGuard" />
-
-    <NoticeBanner tone="caution" title="内容状态说明">
+    <NoticeBanner tone="info" title="内容状态说明">
       <p>本页面内容为一般性方法框架，不针对任何具体文书或具体案件给出结论，具体条目待法律复核后正式发布。</p>
     </NoticeBanner>
 
@@ -51,18 +54,8 @@ const methods = [
 </template>
 
 <style scoped>
-.lead {
-  color: var(--color-text-muted);
-  max-width: 640px;
-  margin-bottom: 20px;
-}
-
-.documents-print {
-  margin-bottom: var(--space-5);
-}
-
 .list li {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2);
   color: var(--color-text);
 }
 </style>

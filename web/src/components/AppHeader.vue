@@ -63,7 +63,7 @@ function closeNav() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 60px;
+  height: var(--header-height);
   position: relative;
 }
 
@@ -107,7 +107,7 @@ function closeNav() {
   display: none;
   flex-direction: column;
   position: absolute;
-  top: 60px;
+  top: var(--header-height);
   left: 0;
   right: 0;
   background: var(--color-bg);
