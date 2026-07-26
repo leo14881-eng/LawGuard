@@ -246,6 +246,15 @@ ul {
   box-shadow: var(--shadow-sm);
 }
 
+/* 可交互卡片的键盘聚焦态：所有复用 .card--interactive 的组件
+   （如 QuickNavCard、AppCard）统一在此维护，避免各组件各自重复定义。 */
+.card--interactive:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-color: var(--color-primary-light);
+  box-shadow: var(--shadow-md);
+}
+
 /* 状态徽标：默认沿用中性 warning 语义（历史上用于"待复核"类提示），
    具体状态语义请使用 StatusBadge 组件的 status 属性而非直接写颜色。 */
 .badge {
@@ -288,5 +297,23 @@ ul {
   }
   h2 {
     font-size: 28px;
+  }
+}
+
+/* 首页快速导航（QuickNavCard）：复用全局 .grid/.grid-2/.grid-3 列数规则，
+   此处仅按 640px / 960px 断点补充间距节奏，不新增独立断点数值。 */
+.quick-nav .grid {
+  gap: var(--space-4);
+}
+
+@media (min-width: 640px) {
+  .quick-nav .grid {
+    gap: var(--space-5);
+  }
+}
+
+@media (min-width: 960px) {
+  .quick-nav .grid {
+    gap: var(--space-6);
   }
 }

@@ -37,9 +37,9 @@ const features = [
 
     <section class="section">
       <div class="container">
-        <h2>快速导航</h2>
+        <h2 id="quick-nav-heading">快速导航</h2>
         <p class="section__lead">常用入口一步直达，方便快速查看官方渠道、法律依据与诉讼阶段。</p>
-        <QuickNavCard />
+        <QuickNavCard heading-id="quick-nav-heading" />
       </div>
     </section>
 
