@@ -7,6 +7,7 @@
 import contextlib
 import io
 import itertools
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,6 +64,44 @@ def _fake_plan_result(risk_level: str = "LOW") -> tuple[DevelopmentTask, list[To
 
 def _fake_review_result(verdict: str = "PASS", safe_to_commit: bool = True) -> tuple[ReviewResult, TokenUsage]:
     return _fake_review(verdict=verdict, safe_to_commit=safe_to_commit), _fake_usage("reviewer")
+
+
+def _fake_scored_task(
+    title: str,
+    *,
+    value_user: int = 0,
+    value_product: int = 0,
+    value_legal: int = 0,
+    value_tech_debt: int = 0,
+    repetition_penalty: int = 0,
+    maintenance_cost: int = 0,
+    task_category: str = "用户体验重大提升",
+    files_allowed: list[str] | None = None,
+    rationale: str = "",
+) -> DevelopmentTask:
+    """构造一个可自定义 ValueScore 分项/标题的候选任务，用于 Planner Candidate
+    Loop 测试（见 TestPlannerCandidateLoop）。files_allowed 未显式指定时按标题
+    派生一个确定性的"唯一"路径，避免多个本意不同的候选任务因为共用同一个默认
+    files_allowed 而被候选去重误判为重复（同一文件完全可能承载多个不相关改动，
+    见 value_gate.is_duplicate_candidate 的规则 3）。
+    """
+    return DevelopmentTask(
+        task_id="T-CAND", title=title, objective=title, rationale=rationale,
+        scope="示例范围", acceptance_criteria=["构建通过"],
+        files_allowed=files_allowed or [f"web/src/views/_test_{abs(hash(title)) % 100000}.vue"],
+        files_forbidden=["LAWGUARD_SOT.md"],
+        validation_commands=["npm run build"], risk_level="LOW",
+        requires_sot_update=False, developer_prompt="示例说明",
+        task_category=task_category,
+        value_user=value_user, value_product=value_product, value_legal=value_legal,
+        value_tech_debt=value_tech_debt, repetition_penalty=repetition_penalty, maintenance_cost=maintenance_cost,
+        why_valuable="测试用途", why_not_other_candidates="测试用途",
+        why_not_duplicate="测试用途", expected_user_benefit="测试用途",
+    )
+
+
+def _plan_result_for(task: DevelopmentTask) -> tuple[DevelopmentTask, list[TokenUsage]]:
+    return task, [_fake_usage()]
 
 
 def _fake_claude_result(exit_code: int = 0, timed_out: bool = False) -> CommandResult:
@@ -816,6 +855,288 @@ class TestAutoLoopStartupRecovery(_OrchestratorTestBase):
             progress_state.completed_tasks,
             ["task-001: 示例任务", "task-002: 示例任务"],
         )
+
+
+class TestPlannerCandidateLoop(_OrchestratorTestBase):
+    """Planner Candidate Loop 回归测试（2026-07-26 新增）：单个候选被 Value Gate
+    拒绝不应立即结束整个运行，应在 PLANNER_CANDIDATE_LIMIT 次内继续请求新候选，
+    只有连续全部被拒绝才以 NO_HIGH_VALUE_TASK 结束；候选阶段全程不得调用 Claude。
+    """
+
+    def _write_history_task(
+        self, run_id: str, title: str, *, risk_level: str = "LOW",
+        # 默认分值给一个不会意外触发 Stop Rule（均分 < 8 即停止）的正常分数
+        # （8+7=15），只有明确要模拟"低价值历史"的测试才会显式传入低分覆盖。
+        value_user: int = 8, value_product: int = 7, value_legal: int = 0,
+        value_tech_debt: int = 0, repetition_penalty: int = 0, maintenance_cost: int = 0,
+    ) -> None:
+        run_dir = self.tmp_path / "runtime" / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        data = {
+            "title": title, "objective": title, "risk_level": risk_level,
+            "value_user": value_user, "value_product": value_product, "value_legal": value_legal,
+            "value_tech_debt": value_tech_debt, "repetition_penalty": repetition_penalty,
+            "maintenance_cost": maintenance_cost, "task_category": "用户体验重大提升",
+        }
+        (run_dir / "task.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    @mock.patch("automation.claude_runner.build_task_prompt")
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_first_candidate_rejected_second_passes_develops_only_second(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+        mock_build_task_prompt,
+    ):
+        low = _fake_scored_task("Privacy 页面增加打印按钮", value_user=2, value_product=2)  # score=4 < 15
+        high = _fake_scored_task("新增本地全文搜索功能", value_user=9, value_product=8)  # score=17 >= 15
+        mock_plan.side_effect = [
+            _plan_result_for(low), _plan_result_for(high), _plan_result_for(_fake_task(risk_level="DONE")),
+        ]
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+        mock_build_task_prompt.return_value = "prompt"
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_plan.call_count, 3)
+        self.assertEqual(mock_run_claude.call_count, 1)
+        self.mock_git.commit.assert_called_once()
+        # 只有第二个候选（高分）进入了 Claude 开发流程，不是第一个（低分被拒绝）。
+        _, kwargs = mock_build_task_prompt.call_args
+        self.assertEqual(kwargs["task_title"], "新增本地全文搜索功能")
+
+    @mock.patch("automation.claude_runner.build_task_prompt")
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_first_candidate_repetition_blocked_second_passes(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+        mock_build_task_prompt,
+    ):
+        # 预置 3 条历史记录，使 PrintButton 类别达到重复上限（REPETITION_LIMIT=3）。
+        for i in range(3):
+            self._write_history_task(f"20200101_00000{i}_hist{i}", f"页面 {i} 新增打印按钮")
+
+        # 第一个候选即使自评分很高，也会被"重复类别达到上限"硬性拦截（未声明严重缺陷）。
+        repetitive_high = _fake_scored_task(
+            "Documents 页面新增打印本页入口", value_user=9, value_product=9
+        )
+        different = _fake_scored_task("为 Legal Sources 页面补全官方链接与发布日期", value_user=8, value_legal=9)
+        mock_plan.side_effect = [
+            _plan_result_for(repetitive_high), _plan_result_for(different),
+            _plan_result_for(_fake_task(risk_level="DONE")),
+        ]
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+        mock_build_task_prompt.return_value = "prompt"
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_plan.call_count, 3)
+        self.mock_git.commit.assert_called_once()
+        _, kwargs = mock_build_task_prompt.call_args
+        self.assertEqual(kwargs["task_title"], "为 Legal Sources 页面补全官方链接与发布日期")
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_three_low_value_candidates_end_with_no_high_value_task(
+        self, _ctx, _create_client, mock_plan, mock_run_claude
+    ):
+        candidates = [
+            _fake_scored_task("Privacy 页面增加打印按钮", value_user=2, value_product=2),
+            _fake_scored_task("Documents 页面调整间距", value_user=1, value_product=1),
+            _fake_scored_task("为组件补充 aria-label", value_user=2, value_product=1),
+        ]
+        mock_plan.side_effect = [_plan_result_for(c) for c in candidates]
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            exit_code = orchestrator.main([])
+        output = stdout.getvalue()
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_plan.call_count, 3)
+        mock_run_claude.assert_not_called()
+        self.mock_git.commit.assert_not_called()
+        self.assertIn("个候选均未通过 Value Gate", output)
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_synonymous_print_button_rewrites_detected_as_duplicate(
+        self, _ctx, _create_client, mock_plan, mock_run_claude
+    ):
+        # 候选 1：低分，被普通 Value Gate 拒绝；候选 2/3：即使自评分很高，也因为
+        # 与候选 1 命中同一个重复类别（PrintButton）而被候选去重直接拒绝，
+        # 不会因为换了页面名称/措辞就蒙混过关。
+        c1 = _fake_scored_task("Privacy 页面增加 PrintPageButton", value_user=2, value_product=2)
+        c2 = _fake_scored_task("Privacy 页面新增打印入口", value_user=9, value_product=9)
+        c3 = _fake_scored_task("为隐私政策页补充打印入口", value_user=9, value_product=9)
+        mock_plan.side_effect = [_plan_result_for(c1), _plan_result_for(c2), _plan_result_for(c3)]
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_plan.call_count, 3)
+        mock_run_claude.assert_not_called()
+        self.mock_git.commit.assert_not_called()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_stop_rule_triggers_before_any_planner_call(
+        self, _ctx, _create_client, mock_plan, mock_run_claude
+    ):
+        # 预置 20 条低分历史记录（均分 4 < Stop Rule 阈值 8），应在调用 Planner 之前
+        # 就直接以 STOPPED_LOW_VALUE 结束，Candidate Loop 完全不运行。
+        for i in range(20):
+            self._write_history_task(f"20200101_{i:06d}_hist", f"低价值历史任务 {i}", value_user=2, value_product=2)
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        mock_plan.assert_not_called()
+        mock_run_claude.assert_not_called()
+        self.mock_git.commit.assert_not_called()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_candidate_one_passes_calls_planner_once(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        high = _fake_scored_task("新增本地全文搜索功能", value_user=9, value_product=8)
+        mock_plan.return_value = _plan_result_for(high)
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+
+        exit_code = orchestrator.main(["--dry-run"])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_plan.call_count, 1)
+        mock_run_claude.assert_not_called()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_candidates_1_and_2_rejected_candidate_3_passes(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        low1 = _fake_scored_task("Privacy 页面增加打印按钮", value_user=2, value_product=2)
+        low2 = _fake_scored_task("Documents 页面调整间距", value_user=1, value_product=1)
+        high3 = _fake_scored_task("新增本地全文搜索功能", value_user=9, value_product=8)
+        mock_plan.side_effect = [
+            _plan_result_for(low1), _plan_result_for(low2), _plan_result_for(high3),
+            _plan_result_for(_fake_task(risk_level="DONE")),
+        ]
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertEqual(mock_plan.call_count, 4)
+        self.assertEqual(mock_run_claude.call_count, 1)
+        self.mock_git.commit.assert_called_once()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_candidate_loop_and_attempt_counter_are_independent(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        # Candidate Loop 用了 3 次 Planner 调用才选中候选（2 次拒绝 + 1 次通过），
+        # 而选中后的开发阶段只需要 2 次 Attempt（Validation 先失败一次再修复通过），
+        # 两个计数彼此独立、互不干扰、不会被合并或错记。
+        low1 = _fake_scored_task("Privacy 页面增加打印按钮", value_user=2, value_product=2)
+        low2 = _fake_scored_task("Documents 页面调整间距", value_user=1, value_product=1)
+        high3 = _fake_scored_task("新增本地全文搜索功能", value_user=9, value_product=8)
+        mock_plan.side_effect = [
+            _plan_result_for(low1), _plan_result_for(low2), _plan_result_for(high3),
+            _plan_result_for(_fake_task(risk_level="DONE")),
+        ]
+        mock_run_claude.return_value = _fake_claude_result()
+        failed_build = (
+            [CommandResult(command="npm run build", cwd="web", exit_code=1, stdout="", stderr="类型错误",
+                            duration_seconds=1.0, timed_out=False)],
+            False,
+        )
+        mock_validate.side_effect = [failed_build, ([], True)]
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+        self.mock_git.get_diff.side_effect = (f"diff-{i}" for i in itertools.count(1))
+
+        exit_code = orchestrator.main([])
+
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        # Candidate Loop 用了 3 次 Planner 调用选中 Task #1 的候选，第 4 次是
+        # Task #2 的 Candidate 1（返回 DONE 结束循环）；开发阶段只用了 2 次
+        # Attempt——两个计数不同（4 vs 2），证明彼此独立、不会被合并计数。
+        self.assertEqual(mock_plan.call_count, 4)
+        self.assertEqual(mock_run_claude.call_count, 2)  # 开发 Attempt：2 次
+        self.mock_git.commit.assert_called_once()
+
+    @mock.patch("automation.claude_runner.run_claude")
+    @mock.patch("automation.validator.run_validation")
+    @mock.patch("automation.openai_client.review_change")
+    @mock.patch("automation.openai_client.plan_next_task")
+    @mock.patch("automation.openai_client.create_client")
+    @mock.patch("automation.context_loader.build_reviewer_context", return_value="评审上下文")
+    @mock.patch("automation.context_loader.build_planner_context", return_value="上下文")
+    def test_report_contains_each_candidate_score_and_reason(
+        self, _ctx1, _ctx2, _create_client, mock_plan, mock_review, mock_validate, mock_run_claude,
+    ):
+        low = _fake_scored_task("Privacy 页面增加打印按钮", value_user=2, value_product=2)
+        high = _fake_scored_task("新增本地全文搜索功能", value_user=9, value_product=8)
+        mock_plan.side_effect = [_plan_result_for(low), _plan_result_for(high)]
+        mock_run_claude.return_value = _fake_claude_result()
+        mock_validate.return_value = ([], True)
+        mock_review.return_value = _fake_review_result(verdict="PASS", safe_to_commit=True)
+
+        orchestrator.main(["--dry-run"])
+
+        run_dirs = list((self.tmp_path / "runtime").iterdir())
+        self.assertEqual(len(run_dirs), 1)
+        report_data = json.loads((run_dirs[0] / "run_report.json").read_text(encoding="utf-8"))
+        evaluations = report_data["candidate_evaluations"]
+        self.assertEqual(len(evaluations), 2)
+        self.assertEqual(evaluations[0]["title"], "Privacy 页面增加打印按钮")
+        self.assertEqual(evaluations[0]["score"], 4)
+        self.assertFalse(evaluations[0]["passed"])
+        self.assertTrue(evaluations[0]["reasons"])
+        self.assertEqual(evaluations[1]["title"], "新增本地全文搜索功能")
+        self.assertEqual(evaluations[1]["score"], 17)
+        self.assertTrue(evaluations[1]["passed"])
 
 
 if __name__ == "__main__":

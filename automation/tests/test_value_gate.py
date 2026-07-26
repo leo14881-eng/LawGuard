@@ -249,5 +249,69 @@ class TestValidateValueFields(unittest.TestCase):
         self.assertEqual(value_gate.validate_value_fields(task), [])
 
 
+class TestCandidateFingerprintDedup(unittest.TestCase):
+    """Planner Candidate Loop 候选去重测试：见 value_gate.compute_candidate_fingerprint /
+    is_duplicate_candidate（作用于"同一轮内的候选之间"，与跨运行的
+    REPETITIVE_CATEGORY_PATTERNS/REPETITION_LIMIT 是两套独立机制）。"""
+
+    def test_same_repetitive_category_is_duplicate_even_with_different_page(self):
+        a = _make_task(title="Privacy 页面新增打印按钮", files_allowed=["web/src/views/PrivacyView.vue"])
+        b = _make_task(title="Disclaimer 页面新增打印按钮", files_allowed=["web/src/views/DisclaimerView.vue"])
+        fp_a = value_gate.compute_candidate_fingerprint(a)
+        fp_b = value_gate.compute_candidate_fingerprint(b)
+        self.assertTrue(value_gate.is_duplicate_candidate(fp_a, fp_b))
+
+    def test_title_case_and_punctuation_variants_are_duplicate(self):
+        a = _make_task(title="新增本地全文搜索功能！")
+        b = _make_task(title="  新增本地全文搜索功能 ")
+        fp_a = value_gate.compute_candidate_fingerprint(a)
+        fp_b = value_gate.compute_candidate_fingerprint(b)
+        self.assertTrue(value_gate.is_duplicate_candidate(fp_a, fp_b))
+
+    def test_same_files_and_category_is_duplicate(self):
+        a = _make_task(
+            title="修复 Documents 页面的一个问题", task_category="技术债清理",
+            files_allowed=["web/src/views/DocumentsView.vue"],
+        )
+        b = _make_task(
+            title="改善 Documents 页面的另一个问题", task_category="技术债清理",
+            files_allowed=["web/src/views/DocumentsView.vue"],
+        )
+        fp_a = value_gate.compute_candidate_fingerprint(a)
+        fp_b = value_gate.compute_candidate_fingerprint(b)
+        self.assertTrue(value_gate.is_duplicate_candidate(fp_a, fp_b))
+
+    def test_same_files_but_different_category_is_not_duplicate(self):
+        # 同一个文件完全可能承载两个互不相关的真实改动，单独"目标文件相同"
+        # 不足以判定重复，必须叠加任务分类也相同。
+        a = _make_task(
+            title="修复 Documents 页面的内容缺陷", task_category="法律内容完善",
+            files_allowed=["web/src/views/DocumentsView.vue"],
+        )
+        b = _make_task(
+            title="为 Documents 页面新增无关的响应式微调", task_category="技术债清理",
+            files_allowed=["web/src/views/DocumentsView.vue"],
+        )
+        fp_a = value_gate.compute_candidate_fingerprint(a)
+        fp_b = value_gate.compute_candidate_fingerprint(b)
+        self.assertFalse(value_gate.is_duplicate_candidate(fp_a, fp_b))
+
+    def test_genuinely_different_candidates_are_not_duplicate(self):
+        a = _make_task(title="新增本地全文搜索功能", files_allowed=["web/src/views/SearchView.vue"])
+        b = _make_task(
+            title="为 Legal Sources 页面补全官方链接与发布日期",
+            files_allowed=["web/src/data/legalSources.ts"],
+        )
+        fp_a = value_gate.compute_candidate_fingerprint(a)
+        fp_b = value_gate.compute_candidate_fingerprint(b)
+        self.assertFalse(value_gate.is_duplicate_candidate(fp_a, fp_b))
+
+    def test_normalize_candidate_title_strips_case_space_punctuation(self):
+        self.assertEqual(
+            value_gate.normalize_candidate_title("  新增 打印按钮！ "),
+            value_gate.normalize_candidate_title("新增打印按钮"),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

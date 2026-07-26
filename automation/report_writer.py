@@ -215,6 +215,27 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
             f"- 判定依据：\n{reasons_text}"
         )
 
+    candidate_lines: list[str] = []
+    for ev in report.candidate_evaluations:
+        result = "PASS" if ev.get("passed") else "REJECT"
+        dup_text = (
+            f"（与 Candidate {ev['duplicate_of_candidate']} 判定为同一候选，视为同义改写）"
+            if ev.get("duplicate_of_candidate")
+            else ""
+        )
+        reasons_text = "；".join(ev.get("reasons", [])) or "（无）"
+        candidate_lines.append(
+            f"### Candidate {ev.get('candidate_number')}\n"
+            f"- 标题：{ev.get('title')}\n"
+            f"- 分类：{ev.get('task_category') or '未知'}\n"
+            f"- Python 实算 ValueScore：{ev.get('score')}\n"
+            f"- 结果：{result}{dup_text}\n"
+            f"- 重复类别：{ev.get('repetitive_category') or '无'}"
+            f"（最近已出现 {ev.get('repetitive_count', 0)} 次）\n"
+            f"- 判定/拒绝原因：{reasons_text}"
+        )
+    candidate_text = "\n\n".join(candidate_lines) if candidate_lines else "（本次运行未触发 Planner Candidate Loop，例如 Value Gate Stop Rule 已提前拦截）"
+
     lock_text = "（本次运行未持有仓库运行锁）"
     if report.lock_info:
         li = report.lock_info
@@ -290,6 +311,9 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
 
 ## 18. Value Gate
 {value_gate_text}
+
+## 19. Planner Candidate 评估明细
+{candidate_text}
 """
     reports_dir.mkdir(parents=True, exist_ok=True)
     path = reports_dir / f"{report.run_id}.md"

@@ -310,6 +310,70 @@ def build_capability_matrix_context() -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Planner Candidate Loop 候选去重（2026-07-26 新增，见 orchestrator.py 的
+# PLANNER_CANDIDATE_LIMIT）：单次运行内 Planner 最多提出 3 个候选，本节只负责
+# 判断"同一轮内的两个候选是否属于同一个任务的同义改写"，不修改上面的 ValueScore
+# 公式、阈值或跨运行的重复类别拦截规则（REPETITION_LIMIT 等）——那是另一套独立
+# 判断标准，作用于"最近 30 个已完成/已生成的历史任务"，本节只作用于"当前这一轮
+# 尚未生成的候选之间"。
+# ---------------------------------------------------------------------------
+_TITLE_NORMALIZE_PATTERN = re.compile(
+    r"[\s　，。！？：；、,.\!\?:;\"'“”‘’()（）\-—_/\\]+"
+)
+
+
+def normalize_candidate_title(title: str) -> str:
+    """归一化标题：忽略大小写、空白（含全角空格）、常见中英文标点差异，
+    用于识别"仅大小写/空格/标点变化"的同一候选。
+    """
+    text = (title or "").strip().lower()
+    return _TITLE_NORMALIZE_PATTERN.sub("", text)
+
+
+@dataclass
+class CandidateFingerprint:
+    """单个候选任务的去重指纹。"""
+
+    repetitive_category: str | None
+    normalized_title: str
+    task_category: str
+    files_signature: tuple[str, ...]
+
+
+def compute_candidate_fingerprint(task: DevelopmentTask) -> CandidateFingerprint:
+    """根据 title / category / 目标文件 / 重复类别生成候选指纹。"""
+    return CandidateFingerprint(
+        repetitive_category=classify_repetitive_category(task.title, task.objective),
+        normalized_title=normalize_candidate_title(task.title),
+        task_category=task.task_category,
+        files_signature=tuple(sorted(task.files_allowed or [])),
+    )
+
+
+def is_duplicate_candidate(a: CandidateFingerprint, b: CandidateFingerprint) -> bool:
+    """判断两个候选指纹是否应视为"同一个候选的同义改写"。
+
+    命中以下任一规则即判定重复：
+    1. 两者都命中同一个已知重复类别（如 PrintButton）——即使标题换了页面名称
+       （"Privacy 增加打印按钮" vs "Disclaimer 增加打印按钮"），本质仍是同一类
+       低价值改动，禁止靠换页面绕过。
+    2. 标题归一化后完全相同（仅大小写/空格/标点差异）。
+    3. 目标文件集合完全一致，且任务分类也相同——单独"目标文件相同"不足以判定
+       重复（同一个文件完全可能承载多个互不相关的真实改动，例如同一个页面
+       先后需要修复一个内容缺陷、再新增一个无关的可访问性问题），必须叠加
+       task_category 相同才视为同一候选，避免把两个针对同一文件的不同任务
+       误判为同义改写。
+    """
+    if a.repetitive_category and b.repetitive_category and a.repetitive_category == b.repetitive_category:
+        return True
+    if a.normalized_title and a.normalized_title == b.normalized_title:
+        return True
+    if a.files_signature and a.files_signature == b.files_signature and a.task_category == b.task_category:
+        return True
+    return False
+
+
 def build_repetition_context(history: list[dict[str, Any]]) -> str:
     """生成供 Planner 上下文使用的"最近任务重复情况"文本。"""
     if not history:

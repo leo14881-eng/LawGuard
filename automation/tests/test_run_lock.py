@@ -29,6 +29,28 @@ def _write_raw_lock(lock: run_lock.RepositoryRunLock, data: dict) -> None:
     lock.lock_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _fake_low_value_plan_result():
+    """构造一个 ValueScore 明显低于门槛（2+2+0+0-0-0=4 < 15）的候选任务，
+    用于验证 Planner Candidate Loop 全部候选被拒绝后（NO_HIGH_VALUE_TASK）
+    仓库运行锁仍然被正常释放。
+    """
+    from automation.models import DevelopmentTask, TokenUsage
+
+    task = DevelopmentTask(
+        task_id="task-low-value", title="低价值候选任务", objective="不会真正执行",
+        rationale="用于测试 NO_HIGH_VALUE_TASK 场景下锁是否正常释放",
+        scope="", acceptance_criteria=[], files_allowed=[], files_forbidden=[],
+        validation_commands=[], risk_level="LOW", requires_sot_update=False, developer_prompt="",
+        task_category="用户体验重大提升",
+        value_user=2, value_product=2, value_legal=0, value_tech_debt=0,
+        repetition_penalty=0, maintenance_cost=0,
+        why_valuable="测试用途", why_not_other_candidates="测试用途",
+        why_not_duplicate="测试用途", expected_user_benefit="测试用途",
+    )
+    usage = TokenUsage(call_label="planner", model="test-model", prompt_tokens=1, completion_tokens=1, total_tokens=2)
+    return task, [usage]
+
+
 def _fake_plan_result(risk_level: str = "LOW"):
     """构造一个与 automation/tests/test_orchestrator_flow.py 中同名 helper 等价的
     最小 DevelopmentTask + usage 元组，避免真实调用 OpenAI。
@@ -291,6 +313,27 @@ class TestReleaseOnVariousExitPaths(LockTestCaseBase):
                 orchestrator.main([])
         # main() 内部用 try/finally 释放锁，KeyboardInterrupt 会继续向外传播
         # （与 __main__ 顶层的 except KeyboardInterrupt 一致），但锁必须已释放。
+        self.assertFalse((repo / run_lock.LOCK_DIR_NAME / run_lock.LOCK_FILE_NAME).exists())
+
+    def test_release_after_no_high_value_task(self):
+        """场景 10（Value Gate Candidate Loop）：3 个候选全部被 Value Gate 拒绝，
+        最终状态 NO_HIGH_VALUE_TASK，进程必须正常结束并释放仓库运行锁（不是错误、
+        不是 BLOCKED，属于正常退出路径）。
+        """
+        repo = self.make_repo()
+        with mock.patch("automation.context_loader.build_planner_context", return_value="ctx"), \
+             mock.patch("automation.openai_client.create_client"), \
+             mock.patch(
+                 "automation.openai_client.plan_next_task",
+                 side_effect=[_fake_low_value_plan_result() for _ in range(3)],
+             ), \
+             mock.patch.object(run_lock, "resolve_repo_root", return_value=repo):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = orchestrator.main([])
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, orchestrator.EXIT_SUCCESS)
+        self.assertIn("个候选均未通过 Value Gate", output)
         self.assertFalse((repo / run_lock.LOCK_DIR_NAME / run_lock.LOCK_FILE_NAME).exists())
 
 

@@ -64,7 +64,7 @@ from automation.config import (
     load_config,
 )
 from automation.git_service import GitError, GitService
-from automation.models import CommandResult, ReviewResult, RunReport
+from automation.models import CommandResult, DevelopmentTask, ReviewResult, RunReport
 from automation.report_writer import (
     setup_run_logger,
     write_json_file,
@@ -94,6 +94,13 @@ EXIT_UNLOCK_STALE_FAILED = 9  # --unlock-stale 未能清理陈旧锁（锁并非
 MAX_ATTEMPTS = 3
 MAX_REVIEW_ATTEMPTS = MAX_ATTEMPTS
 RETRY_ELIGIBLE_RISK_LEVEL = "LOW"
+
+# Planner Candidate Loop（2026-07-26 新增）：单个候选任务被 Value Gate 拒绝不代表
+# 整个项目已经没有高价值任务，在正式进入 Claude Code 开发前，最多允许 Planner
+# 提出 PLANNER_CANDIDATE_LIMIT 个不同候选，只有连续全部被拒绝才停止本次运行
+# （最终状态 NO_HIGH_VALUE_TASK，见 run_task_cycle）。候选阶段全程不调用 Claude
+# Code、不产生任何代码改动，与"开发 Attempt"（MAX_ATTEMPTS）是两条完全独立的计数。
+PLANNER_CANDIDATE_LIMIT = 3
 
 PROMPT_TYPE_INITIAL = "INITIAL"
 PROMPT_TYPE_VALIDATION_FIX = "VALIDATION_FIX"
@@ -345,6 +352,26 @@ def build_autodev_commit_message(task_number: int, base_message: str) -> str:
     return prefix + first_line
 
 
+def _build_rejected_candidates_context(rejected_candidates: list[dict]) -> str:
+    """生成"本轮已拒绝候选"上下文文本，追加到 Planner Prompt 之后，明确要求
+    不得再提出相同或高度相似的任务（见 automation/value_gate.py 的候选去重逻辑，
+    这里只负责把已拒绝的候选清单转换为可读的自然语言提示）。
+    """
+    lines = [
+        "## 本轮已拒绝的候选任务（Planner Candidate Loop）",
+        "以下候选已经在本轮 Value Gate 评估中被拒绝，禁止再提出相同或高度相似的任务"
+        "（包括仅更换目标页面、仅改写措辞、仅调整表述方式的同义改写），必须提出真正不同的候选：",
+    ]
+    for c in rejected_candidates:
+        reasons_text = "；".join(c["reasons"]) or "（无）"
+        lines.append(
+            f"- 候选 {c['candidate_number']}：{c['title']}"
+            f"（分类：{c['task_category'] or '未知'}，Python 实算 ValueScore：{c['score']}）\n"
+            f"  拒绝原因：{reasons_text}"
+        )
+    return "\n".join(lines)
+
+
 def run_task_cycle(
     args: argparse.Namespace, task_number: int, lock_report_info: dict | None = None
 ) -> tuple[int, str]:
@@ -469,45 +496,129 @@ def run_task_cycle(
     # 第三步：读取项目上下文
     logger.info("读取项目上下文（LAWGUARD_SOT.md / CLAUDE.md / package.json / 文件树 / Git 状态）...")
     project_context = context_loader.build_planner_context()
-
-    # 第四步：调用 OpenAI 规划下一项任务
     client = openai_client.create_client(config)
-    logger.info("调用 OpenAI 规划下一项开发任务...")
-    try:
-        task, planner_usages = openai_client.plan_next_task(client, config, project_context)
-    except openai_client.PlannerError as exc:
-        report.token_usages.extend(exc.usages)
-        logger.error("规划任务失败：%s", exc)
-        return finalize("PLANNER_FAILED", str(exc), EXIT_GENERAL_FAILURE)
-    except Exception as exc:  # noqa: BLE001 - OpenAI SDK 可能抛出多种异常（鉴权、模型不可用等）
-        logger.error("调用 OpenAI 规划器时发生错误：%s", exc)
-        return finalize("PLANNER_FAILED", str(exc), EXIT_GENERAL_FAILURE)
 
-    report.token_usages.extend(planner_usages)
+    # 第四步：Planner Candidate Loop——单个候选被 Value Gate 拒绝不代表整个项目
+    # 已经没有高价值任务，最多请求 PLANNER_CANDIDATE_LIMIT 个不同候选，只有连续
+    # 全部被拒绝才停止本次运行（最终状态 NO_HIGH_VALUE_TASK）。候选阶段全程不
+    # 调用 Claude Code、不产生任何代码改动、不创建 Commit。
+    task: DevelopmentTask | None = None
+    gate_decision: value_gate.GateDecision | None = None
+    rejected_candidates: list[dict] = []
+    candidate_fingerprints: list[value_gate.CandidateFingerprint] = []
+    candidate_evaluations: list[dict] = []
 
-    report.task = task
-    write_json_file(run_dir / "task.json", task.to_dict())
-    logger.info("任务已生成：%s", task.title)
-    logger.info("任务目标：%s", task.objective)
-    logger.info("风险等级：%s", task.risk_level)
+    for candidate_number in range(1, PLANNER_CANDIDATE_LIMIT + 1):
+        logger.info("===== Planner Candidate %d/%d =====", candidate_number, PLANNER_CANDIDATE_LIMIT)
+        candidate_context = project_context
+        if rejected_candidates:
+            candidate_context = project_context + "\n\n" + _build_rejected_candidates_context(rejected_candidates)
 
-    if task.risk_level == "DONE":
-        msg = f"规划器判断当前没有更多可安全规划的开发任务，Auto Dev 正常结束。原因：{task.rationale}"
-        logger.info(msg)
-        return finalize("PLANNER_DONE", msg, EXIT_SUCCESS)
+        try:
+            candidate_task, planner_usages = openai_client.plan_next_task(client, config, candidate_context)
+        except openai_client.PlannerError as exc:
+            report.token_usages.extend(exc.usages)
+            logger.error("规划任务失败（Candidate %d/%d）：%s", candidate_number, PLANNER_CANDIDATE_LIMIT, exc)
+            return finalize("PLANNER_FAILED", str(exc), EXIT_GENERAL_FAILURE)
+        except Exception as exc:  # noqa: BLE001 - OpenAI SDK 可能抛出多种异常（鉴权、模型不可用等）
+            logger.error(
+                "调用 OpenAI 规划器时发生错误（Candidate %d/%d）：%s", candidate_number, PLANNER_CANDIDATE_LIMIT, exc
+            )
+            return finalize("PLANNER_FAILED", str(exc), EXIT_GENERAL_FAILURE)
 
-    if task.risk_level == "BLOCKED":
-        msg = (
-            "规划器判断存在开发方向，但由于权限/依赖/环境/资源不足或治理原则要求而无法安全"
-            f"继续（不调用 Claude，不提交）。原因：{task.rationale}"
+        report.token_usages.extend(planner_usages)
+        report.task = candidate_task
+        write_json_file(run_dir / f"task_candidate{candidate_number}.json", candidate_task.to_dict())
+        # 同时写入 task.json（沿用既有文件名，供 value_gate.load_recent_tasks 扫描），
+        # 保存的是本轮最后一个被评估的候选——无论最终是通过还是全部被拒绝，都应
+        # 计入未来运行的历史/重复检测，避免同一低价值候选跨多次运行反复被提出
+        # 却完全不留痕迹。
+        write_json_file(run_dir / "task.json", candidate_task.to_dict())
+        logger.info("候选任务：%s", candidate_task.title)
+        logger.info("候选目标：%s", candidate_task.objective)
+        logger.info("风险等级：%s", candidate_task.risk_level)
+
+        if candidate_task.risk_level == "DONE":
+            msg = f"规划器判断当前没有更多可安全规划的开发任务，Auto Dev 正常结束。原因：{candidate_task.rationale}"
+            logger.info(msg)
+            return finalize("PLANNER_DONE", msg, EXIT_SUCCESS)
+
+        if candidate_task.risk_level == "BLOCKED":
+            msg = (
+                "规划器判断存在开发方向，但由于权限/依赖/环境/资源不足或治理原则要求而无法安全"
+                f"继续（不调用 Claude，不提交）。原因：{candidate_task.rationale}"
+            )
+            logger.warning(msg)
+            return finalize("BLOCKED_BY_PLANNER", msg, EXIT_SECURITY_FAILURE)
+
+        # 候选去重：命中已知重复类别、标题归一化后相同、或目标文件完全一致，均
+        # 视为同一候选的同义改写，直接判定为拒绝，防止 Planner 靠换页面/换措辞
+        # 绕过已经被拒绝过的候选。
+        fingerprint = value_gate.compute_candidate_fingerprint(candidate_task)
+        duplicate_of = next(
+            (
+                i for i, prev in enumerate(candidate_fingerprints, start=1)
+                if value_gate.is_duplicate_candidate(fingerprint, prev)
+            ),
+            None,
         )
-        logger.warning(msg)
-        return finalize("BLOCKED_BY_PLANNER", msg, EXIT_SECURITY_FAILURE)
 
-    # 第四点五步：Value Gate——只有 LOW/MEDIUM/HIGH 任务才会走到这里（DONE/BLOCKED
-    # 已在上面提前返回）。未通过时直接丢弃该任务，不调用 Claude、不消耗自动修复
-    # 次数、不产生任何代码改动，这是"宁可不生成，也不生成低价值任务"的核心执行点。
-    gate_decision = value_gate.evaluate_task(task, task_history)
+        candidate_decision = value_gate.evaluate_task(candidate_task, task_history)
+        if duplicate_of is not None:
+            candidate_decision.passed = False
+            candidate_decision.reasons.append(
+                f"候选去重：与本轮 Candidate {duplicate_of} 高度相似（同义改写：仅更换页面/措辞/表述），"
+                "直接拒绝，不得重新提出。"
+            )
+
+        logger.info("Python 实算 ValueScore：%d", candidate_decision.score)
+        logger.info("Value Gate：%s", "PASS" if candidate_decision.passed else "REJECT")
+        for reason in candidate_decision.reasons:
+            logger.info("%s：%s", "判定依据" if candidate_decision.passed else "拒绝原因", reason)
+
+        candidate_evaluations.append({
+            "candidate_number": candidate_number,
+            "title": candidate_task.title,
+            "task_category": candidate_task.task_category,
+            "score": candidate_decision.score,
+            "passed": candidate_decision.passed,
+            "reasons": list(candidate_decision.reasons),
+            "repetitive_category": candidate_decision.repetitive_category,
+            "repetitive_count": candidate_decision.repetitive_count,
+            "duplicate_of_candidate": duplicate_of,
+        })
+
+        if candidate_decision.passed:
+            logger.info("Value Gate：PASS，已选择 Candidate %d，进入开发阶段。", candidate_number)
+            task = candidate_task
+            gate_decision = candidate_decision
+            break
+
+        rejected_candidates.append({
+            "candidate_number": candidate_number,
+            "title": candidate_task.title,
+            "task_category": candidate_task.task_category,
+            "score": candidate_decision.score,
+            "reasons": list(candidate_decision.reasons),
+        })
+        candidate_fingerprints.append(fingerprint)
+
+    report.candidate_evaluations = candidate_evaluations
+
+    if task is None:
+        msg = (
+            f"Planner 在 {PLANNER_CANDIDATE_LIMIT} 个候选内均未找到符合 Value Gate 的高价值任务，"
+            "未调用 Claude Code，未修改业务代码，未创建业务 Commit。"
+        )
+        logger.warning("===== 未找到符合 Value Gate 的高价值任务 =====")
+        for ev in candidate_evaluations:
+            logger.warning(
+                "Candidate %d：%s｜Python 实算 ValueScore=%d｜%s",
+                ev["candidate_number"], ev["title"], ev["score"], "PASS" if ev["passed"] else "REJECT",
+            )
+        logger.warning(msg)
+        return finalize("NO_HIGH_VALUE_TASK", msg, EXIT_SUCCESS)
+
     report.value_gate_info = {
         "score": gate_decision.score,
         "passed": gate_decision.passed,
@@ -519,25 +630,13 @@ def run_task_cycle(
         "why_not_duplicate": task.why_not_duplicate,
         "expected_user_benefit": task.expected_user_benefit,
     }
-    logger.info("===== Value Gate =====")
+    logger.info("===== Value Gate 最终结果 =====")
     logger.info("Task：%s", task.title)
     logger.info("ValueScore：%d", gate_decision.score)
     logger.info("为什么值得开发：%s", task.why_valuable)
     logger.info("为什么没有选择其它候选任务：%s", task.why_not_other_candidates)
     logger.info("为什么不是重复任务：%s", task.why_not_duplicate)
     logger.info("预计用户收益：%s", task.expected_user_benefit)
-    for reason in gate_decision.reasons:
-        logger.info("Gate 判定依据：%s", reason)
-
-    if not gate_decision.passed:
-        msg = (
-            f"[Value Gate] 任务未通过价值门（ValueScore={gate_decision.score}，"
-            f"重复类别={gate_decision.repetitive_category or '无'}，"
-            f"最近出现次数={gate_decision.repetitive_count}），已丢弃，不调用 Claude，"
-            f"不提交。判定依据：{'；'.join(gate_decision.reasons)}"
-        )
-        logger.warning(msg)
-        return finalize("LOW_VALUE_REJECTED", msg, EXIT_SUCCESS)
 
     if args.dry_run:
         logger.info("--dry-run 模式：仅展示任务，不调用 Claude Code，不修改代码，不提交。")
@@ -1022,8 +1121,11 @@ def main(argv: list[str] | None = None) -> int:
             elif final_status == "STOPPED_LOW_VALUE":
                 print("当前项目已经没有值得自动开发的高价值任务。")
                 print("建议进入 Project Audit 或 V2 规划。")
-            elif final_status == "LOW_VALUE_REJECTED":
-                print(f"Task #{task_number} 未通过 Value Gate，已丢弃，不调用 Claude、不提交。")
+            elif final_status == "NO_HIGH_VALUE_TASK":
+                print(
+                    f"Task #{task_number}：{PLANNER_CANDIDATE_LIMIT} 个候选均未通过 Value Gate，"
+                    "本轮未找到符合条件的高价值任务，未调用 Claude Code，未修改业务代码，未创建业务 Commit。"
+                )
             else:
                 print(f"Auto Dev 已停止（Task #{task_number}，最终状态：{final_status}）。")
             return exit_code

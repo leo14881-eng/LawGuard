@@ -146,6 +146,13 @@ class RunReport:
     # 任务（如 Planner 调用失败）或任务本身是 DONE/BLOCKED（不受 Value Gate 约束）
     # 时为 None。
     value_gate_info: dict[str, Any] | None = None
+    # Planner Candidate Loop 明细（2026-07-26 新增，见 orchestrator.py 的
+    # PLANNER_CANDIDATE_LIMIT）：每个候选一条记录，字段包含 candidate_number、
+    # title、task_category、score（Python 实算 ValueScore）、passed、reasons、
+    # repetitive_category、repetitive_count、duplicate_of_candidate（命中候选
+    # 去重时指向被判定为同一候选的更早候选编号，否则为 None）。未触发候选循环
+    # （例如 Stop Rule 提前拦截）时为空列表。
+    candidate_evaluations: list[dict[str, Any]] = dataclasses.field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -163,6 +170,7 @@ class RunReport:
             "review_attempts": self.review_attempts,
             "lock_info": self.lock_info,
             "value_gate_info": self.value_gate_info,
+            "candidate_evaluations": self.candidate_evaluations,
         }
 
     def to_safe_json(self) -> str:
