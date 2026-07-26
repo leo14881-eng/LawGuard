@@ -198,6 +198,23 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
         f"- 是否执行 git push：否"
     )
 
+    value_gate_text = "（本次未生成 LOW/MEDIUM/HIGH 任务，Value Gate 不适用）"
+    if report.value_gate_info:
+        vg = report.value_gate_info
+        reasons_text = "\n".join(f"  - {r}" for r in vg.get("reasons", [])) or "  （无）"
+        value_gate_text = (
+            f"- Task：{task_title}\n"
+            f"- ValueScore：{vg.get('score')}\n"
+            f"- 判定结果：{'PASS（放行）' if vg.get('passed') else 'REJECT（丢弃）'}\n"
+            f"- 为什么值得开发：{vg.get('why_valuable') or '（无）'}\n"
+            f"- 为什么没有选择其它候选任务：{vg.get('why_not_other_candidates') or '（无）'}\n"
+            f"- 为什么不是重复任务：{vg.get('why_not_duplicate') or '（无）'}\n"
+            f"- 预计用户收益：{vg.get('expected_user_benefit') or '（无）'}\n"
+            f"- 重复类别：{vg.get('repetitive_category') or '（无）'}"
+            f"（最近已出现 {vg.get('repetitive_count', 0)} 次）\n"
+            f"- 判定依据：\n{reasons_text}"
+        )
+
     lock_text = "（本次运行未持有仓库运行锁）"
     if report.lock_info:
         li = report.lock_info
@@ -270,6 +287,9 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
 
 ## 17. 运行锁
 {lock_text}
+
+## 18. Value Gate
+{value_gate_text}
 """
     reports_dir.mkdir(parents=True, exist_ok=True)
     path = reports_dir / f"{report.run_id}.md"

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from automation import config as cfg
 from automation import progress as progress_mod
+from automation import value_gate
 from automation.git_service import GitService
 from automation.models import CommandResult, DevelopmentTask
 
@@ -143,8 +144,16 @@ def build_planner_context() -> str:
     progress_state, _, _ = progress_mod.load_or_repair(cfg.PROGRESS_FILE)
     progress_section = progress_mod.build_planner_context_section(progress_state)
 
+    recent_task_history = value_gate.load_recent_tasks(cfg.RUNTIME_DIR, limit=30)
+    capability_matrix_text = value_gate.build_capability_matrix_context()
+    repetition_text = value_gate.build_repetition_context(recent_task_history)
+
     parts = [
         progress_section,
+        "",
+        capability_matrix_text,
+        "",
+        repetition_text,
         "",
         "## LAWGUARD_SOT.md 摘录（仅规划相关章节：功能范围/页面清单/开发进度/下一步计划；"
         "P-1/P0/P1/P2 等治理原则已在系统提示中以编号引用，此处不重复全文）",

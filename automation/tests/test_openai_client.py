@@ -30,6 +30,20 @@ VALID_TASK = {
     "risk_level": "LOW",
     "requires_sot_update": False,
     "developer_prompt": "示例开发说明",
+    # Value Gate 字段（2026-07-26 新增）：给出足以通过 ValueScore >= 15 门槛的
+    # 取值（8+8+0+2-0-0=18），DONE/BLOCKED 场景下这些字段不参与业务规则校验，
+    # 但仍需类型正确，统一给同一组值。
+    "task_category": "产品能力提升",
+    "value_user": 8,
+    "value_product": 8,
+    "value_legal": 0,
+    "value_tech_debt": 2,
+    "repetition_penalty": 0,
+    "maintenance_cost": 0,
+    "why_valuable": "测试用途：模拟一个明显有价值的任务",
+    "why_not_other_candidates": "测试用途：无其它候选",
+    "why_not_duplicate": "测试用途：非重复类别",
+    "expected_user_benefit": "测试用途：模拟用户收益",
 }
 
 VALID_REVIEW = {

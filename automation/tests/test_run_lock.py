@@ -48,6 +48,14 @@ def _fake_plan_result(risk_level: str = "LOW"):
         risk_level=risk_level,
         requires_sot_update=False,
         developer_prompt="",
+        # Value Gate 字段：给出足以通过 ValueScore >= 15 门槛的取值
+        # （8+8+0+2-0-0=18），确保这批"测试运行锁行为"的用例不会被 Value Gate
+        # 拦在调用 Claude 之前——它们要测试的是锁的释放时机，不是 Value Gate 本身。
+        task_category="产品能力提升",
+        value_user=8, value_product=8, value_legal=0, value_tech_debt=2,
+        repetition_penalty=0, maintenance_cost=0,
+        why_valuable="测试用途", why_not_other_candidates="测试用途",
+        why_not_duplicate="测试用途", expected_user_benefit="测试用途",
     )
     usage = TokenUsage(call_label="planner", model="test-model", prompt_tokens=1, completion_tokens=1, total_tokens=2)
     return task, [usage]

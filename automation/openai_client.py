@@ -21,6 +21,7 @@ from automation.models import (
     TokenUsage,
 )
 from automation.security import check_files_lists, normalize_command
+from automation import value_gate
 
 logger = logging.getLogger("automation.openai_client")
 
@@ -193,6 +194,23 @@ def validate_task_payload(data: dict) -> list[str]:
     if not isinstance(data.get("requires_sot_update"), bool):
         issues.append("requires_sot_update 必须是布尔值")
 
+    # Value Gate 字段基础类型校验（2026-07-26 新增，见 automation/value_gate.py）。
+    # 全部任务（含 DONE/BLOCKED）都要求字段存在且类型正确，取值范围/分类枚举等
+    # "业务规则"校验放在类型校验通过之后，针对 LOW/MEDIUM/HIGH 任务单独执行
+    # （value_gate.validate_value_fields 内部已对 DONE/BLOCKED 直接放行）。
+    if not isinstance(data.get("task_category"), str):
+        issues.append("task_category 必须是字符串")
+    for int_field in (
+        "value_user", "value_product", "value_legal",
+        "value_tech_debt", "repetition_penalty", "maintenance_cost",
+    ):
+        value = data.get(int_field)
+        if not isinstance(value, int) or isinstance(value, bool):
+            issues.append(f"{int_field} 必须是整数")
+    for text_field in ("why_valuable", "why_not_other_candidates", "why_not_duplicate", "expected_user_benefit"):
+        if not isinstance(data.get(text_field), str):
+            issues.append(f"{text_field} 必须是字符串")
+
     if issues:
         return issues
 
@@ -203,6 +221,11 @@ def validate_task_payload(data: dict) -> list[str]:
         for command in data["validation_commands"]:
             if normalize_command(command) is None:
                 issues.append(f"validation_commands 中存在不在白名单内的命令：{command}")
+
+    # 到这里字段类型均已确认合法，可以安全构造 DevelopmentTask 做 Value Gate
+    # 业务规则校验（分类枚举、分项取值范围、理由字段是否为空）。
+    task_for_value_check = DevelopmentTask(**{f.name: data[f.name] for f in fields(DevelopmentTask)})
+    issues.extend(value_gate.validate_value_fields(task_for_value_check))
 
     return issues
 

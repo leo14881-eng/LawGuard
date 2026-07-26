@@ -28,12 +28,20 @@ def _fake_config(auto_commit: bool = True) -> Config:
 
 
 def _fake_task(risk_level: str = "LOW") -> DevelopmentTask:
+    # value_* 字段给出足以通过 Value Gate（ValueScore >= 15）的取值：
+    # 8 + 8 + 0 + 2 - 0 - 0 = 18，DONE/BLOCKED 不受 Value Gate 约束，取值无所谓，
+    # 这里统一给同一组值以保持 fixture 简单。
     return DevelopmentTask(
         task_id="T-001", title="示例任务", objective="示例目标", rationale="示例理由",
         scope="示例范围", acceptance_criteria=["构建通过"],
         files_allowed=["web/src/data/stages.ts"], files_forbidden=["LAWGUARD_SOT.md"],
         validation_commands=["npm run build"], risk_level=risk_level,
         requires_sot_update=False, developer_prompt="示例说明",
+        task_category="产品能力提升",
+        value_user=8, value_product=8, value_legal=0, value_tech_debt=2,
+        repetition_penalty=0, maintenance_cost=0,
+        why_valuable="测试用途：模拟一个明显有价值的任务", why_not_other_candidates="测试用途：无其它候选",
+        why_not_duplicate="测试用途：非重复类别", expected_user_benefit="测试用途：模拟用户收益",
     )
 
 

@@ -19,7 +19,16 @@ REVIEW_VERDICTS = {"PASS", "FAIL", "BLOCKED"}
 
 @dataclass
 class DevelopmentTask:
-    """OpenAI 规划器（CTO 角色）生成的下一项开发任务。"""
+    """OpenAI 规划器（CTO 角色）生成的下一项开发任务。
+
+    2026-07-26 Value Gate 升级新增字段（见 automation/value_gate.py）：
+    task_category 与 value_* / *_penalty / *_cost 用于计算 ValueScore，
+    why_* / expected_user_benefit 要求 Planner 对每个任务给出可核查的理由，
+    不能只凭一句"完善某页面"就生成任务。全部新字段都带默认值，兼容本次升级
+    之前生成的历史 task.json 记录（反序列化时缺失字段按默认值处理，不报错）。
+    仅 risk_level 为 LOW/MEDIUM/HIGH 的任务才要求这些字段有意义的取值，
+    DONE/BLOCKED 不受 Value Gate 约束，保留默认值即可。
+    """
 
     task_id: str
     title: str
@@ -33,6 +42,18 @@ class DevelopmentTask:
     risk_level: str
     requires_sot_update: bool
     developer_prompt: str
+    # Value Gate 相关字段（见 automation/value_gate.py）
+    task_category: str = ""
+    value_user: int = 0
+    value_product: int = 0
+    value_legal: int = 0
+    value_tech_debt: int = 0
+    repetition_penalty: int = 0
+    maintenance_cost: int = 0
+    why_valuable: str = ""
+    why_not_other_candidates: str = ""
+    why_not_duplicate: str = ""
+    expected_user_benefit: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -120,6 +141,11 @@ class RunReport:
     # 路径，未发生时为 None）。未持有锁（例如 --list-models 等只读子命令）时为
     # None。
     lock_info: dict[str, Any] | None = None
+    # Value Gate 评估结果（见 automation/value_gate.py 的 GateDecision），字段：
+    # score、passed、reasons、repetitive_category、repetitive_count。未生成实际
+    # 任务（如 Planner 调用失败）或任务本身是 DONE/BLOCKED（不受 Value Gate 约束）
+    # 时为 None。
+    value_gate_info: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -136,6 +162,7 @@ class RunReport:
             "token_usages": [u.to_dict() for u in self.token_usages],
             "review_attempts": self.review_attempts,
             "lock_info": self.lock_info,
+            "value_gate_info": self.value_gate_info,
         }
 
     def to_safe_json(self) -> str:

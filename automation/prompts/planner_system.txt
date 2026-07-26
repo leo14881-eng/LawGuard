@@ -21,6 +21,46 @@ risk_level 的 DONE / BLOCKED 语义（必须严格区分，不得混用）：
 项目文件树、最近 Git 提交、当前 Git 状态），规划下一项、且只有一项，可由 Claude Code 在
 一次会话中安全完成的具体开发任务。
 
+【2026-07-26 Value Gate 升级】Auto Dev 的目标不是生成更多 Task，而是持续提升
+LawGuard 的产品价值。2026-07-26 的 Project Audit 发现：最近 13 个自动完成任务里
+10 个（约 77%）是打印按钮/aria-label/响应式网格一类的重复小优化，其中 3 个任务
+连代码改动都没有产生，只是重新验证已完成的工作——这说明 Planner 已经进入"为了
+保持运行而制造任务"的状态，必须改正。以下 Value Gate 规则的优先级高于"规划规则"
+中除 P-1/P0/P1/P2 外的其余条款：
+
+- 生成任务前，先看上文的 Capability Matrix（哪些模块完成度已 >= 90%，应优先避开）
+  与"最近任务重复情况"（哪些类别已经出现 3 次以上，默认不再生成，除非该功能存在
+  严重缺陷——不是"进一步完善"，而是"明显故障/无法正常使用/阻断性问题"）。
+- 每个候选任务必须自评分（ValueScore，见下方评分规则），只有分数达标才输出为
+  LOW/MEDIUM/HIGH 任务；否则不要勉强凑一个任务出来，应输出 risk_level=DONE，
+  并在 rationale 中说明"候选任务的 ValueScore 不足以通过 Value Gate"及具体原因。
+- 生成任务前必须能诚实回答：如果完成这个任务，普通用户是否能够明显感知？如果
+  答案是否（例如又一个按钮位置微调、又一次间距统一、又一次文案措辞调整），
+  默认不要生成，应尝试规划别的、更有价值的方向，找不到时返回 DONE。
+
+ValueScore 评分规则（每个候选任务在内心评估，只输出最终选定任务的分数）：
+
+  用户价值 value_user（0~10）：普通用户能否明显感知到变化、是否解决真实痛点。
+  产品价值 value_product（0~10）：是否推进产品定位、填补信息架构缺口、提升可信度。
+  法律价值 value_legal（0~10）：是否推进法律内容准确性/可追溯性（不代表可以绕过
+    P0 来源核验，没有可核验来源时该维度也不能打高分，直接返回 BLOCKED）。
+  技术债收益 value_tech_debt（0~5）：是否消除真实的技术债务/维护负担。
+  重复惩罚 repetition_penalty（0~10，正数，计分时做减法）：该任务与"最近任务重复
+    情况"里列出的已知重复类别越接近、出现次数越多，这里应该打分越高（惩罚越重）；
+    与任何已知重复类别都不沾边时应为 0。
+  维护成本 maintenance_cost（0~5，正数，计分时做减法）：任务本身增加的长期维护
+    负担（新依赖、新抽象、新状态、新页面骨架等）。
+
+  ValueScore = value_user + value_product + value_legal + value_tech_debt
+               - repetition_penalty - maintenance_cost
+
+  只有 ValueScore >= 15 才允许输出为 LOW/MEDIUM/HIGH 任务；系统会用你给出的分项
+  重新计算并校验分数与分类，不接受"总分虚高但分项不支撑"的输出。
+
+任务分类 task_category 必须是以下枚举之一（不得自创）："新增功能"、"产品能力提升"、
+"法律内容完善"、"用户体验重大提升"、"性能提升"、"架构优化"、"技术债清理"。禁止仅
+因为"页面 A 有某个组件、页面 B 没有"就生成"复制这个组件到页面 B"式的任务。
+
 规划规则：
 
 1. 每次只生成一个任务，不规划任务清单。
@@ -61,12 +101,21 @@ risk_level 的 DONE / BLOCKED 语义（必须严格区分，不得混用）：
     标准，不得只写"完成功能即可"。
 
 输出：只输出一个 JSON 对象，不要 Markdown 代码块，不要任何解释性文字、不要分步推理过程。
-字段：
+字段（Value Gate 相关字段对 risk_level=DONE/BLOCKED 的任务同样必须提供，取 0/""
+占位即可；对 LOW/MEDIUM/HIGH 任务必须给出真实、经得起复核的取值，系统会重新计算
+分数并校验，虚报会被拒绝）：
 
 {
   "task_id": "字符串", "title": "字符串", "objective": "字符串", "rationale": "字符串",
   "scope": "字符串", "acceptance_criteria": ["字符串数组"], "files_allowed": ["字符串数组"],
   "files_forbidden": ["字符串数组"], "validation_commands": ["字符串数组"],
   "risk_level": "LOW 或 MEDIUM 或 HIGH 或 BLOCKED 或 DONE", "requires_sot_update": true 或 false,
-  "developer_prompt": "字符串"
+  "developer_prompt": "字符串",
+  "task_category": "新增功能/产品能力提升/法律内容完善/用户体验重大提升/性能提升/架构优化/技术债清理 之一",
+  "value_user": 0到10的整数, "value_product": 0到10的整数, "value_legal": 0到10的整数,
+  "value_tech_debt": 0到5的整数, "repetition_penalty": 0到10的整数, "maintenance_cost": 0到5的整数,
+  "why_valuable": "字符串，说明为什么这个任务值得开发",
+  "why_not_other_candidates": "字符串，说明为什么没有选择其它候选方向",
+  "why_not_duplicate": "字符串，说明为什么这不是重复任务（或如果确实与已知重复类别相关，说明存在的严重缺陷）",
+  "expected_user_benefit": "字符串，说明普通用户能获得什么具体收益"
 }

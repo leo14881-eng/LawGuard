@@ -50,6 +50,7 @@ if __package__ in (None, ""):
 
 from automation import claude_runner, context_loader, openai_client, progress, security, validator
 from automation import run_lock
+from automation import value_gate
 from automation.config import (
     PROGRESS_FILE,
     PROJECT_ROOT,
@@ -449,6 +450,22 @@ def run_task_cycle(
     if is_dirty and args.allow_dirty:
         logger.warning("检测到工作区不干净，已通过 --allow-dirty 显式跳过检查；本次运行将禁止自动提交。")
 
+    # 第二点五步：Value Gate Stop Rule——统计最近 20 个"实际参与过价值评分"的
+    # 任务的平均 ValueScore，低于阈值时说明 Auto Dev 已经在制造低价值任务维持
+    # 运行，应主动停止，而不是继续消耗 OpenAI 调用去生成第 21 个。这一步刻意
+    # 放在调用 Planner 之前，命中时可以省下一次不必要的 API 调用。
+    task_history = value_gate.load_recent_tasks(RUNTIME_DIR, limit=30)
+    should_stop, avg_score, scored_count = value_gate.should_stop_auto_dev(task_history)
+    if should_stop:
+        msg = (
+            f"[Value Gate Stop Rule] 最近 {scored_count} 个任务的平均 ValueScore 为 "
+            f"{avg_score:.1f}，低于停止阈值 8.0。当前项目已经没有值得自动开发的高价值"
+            "任务，Auto Dev 已主动停止，不再继续生成 Task。建议进入 Project Audit 或 "
+            "V2 规划，而不是继续制造低价值任务维持运行。"
+        )
+        logger.warning(msg)
+        return finalize("STOPPED_LOW_VALUE", msg, EXIT_SUCCESS)
+
     # 第三步：读取项目上下文
     logger.info("读取项目上下文（LAWGUARD_SOT.md / CLAUDE.md / package.json / 文件树 / Git 状态）...")
     project_context = context_loader.build_planner_context()
@@ -486,6 +503,41 @@ def run_task_cycle(
         )
         logger.warning(msg)
         return finalize("BLOCKED_BY_PLANNER", msg, EXIT_SECURITY_FAILURE)
+
+    # 第四点五步：Value Gate——只有 LOW/MEDIUM/HIGH 任务才会走到这里（DONE/BLOCKED
+    # 已在上面提前返回）。未通过时直接丢弃该任务，不调用 Claude、不消耗自动修复
+    # 次数、不产生任何代码改动，这是"宁可不生成，也不生成低价值任务"的核心执行点。
+    gate_decision = value_gate.evaluate_task(task, task_history)
+    report.value_gate_info = {
+        "score": gate_decision.score,
+        "passed": gate_decision.passed,
+        "reasons": gate_decision.reasons,
+        "repetitive_category": gate_decision.repetitive_category,
+        "repetitive_count": gate_decision.repetitive_count,
+        "why_valuable": task.why_valuable,
+        "why_not_other_candidates": task.why_not_other_candidates,
+        "why_not_duplicate": task.why_not_duplicate,
+        "expected_user_benefit": task.expected_user_benefit,
+    }
+    logger.info("===== Value Gate =====")
+    logger.info("Task：%s", task.title)
+    logger.info("ValueScore：%d", gate_decision.score)
+    logger.info("为什么值得开发：%s", task.why_valuable)
+    logger.info("为什么没有选择其它候选任务：%s", task.why_not_other_candidates)
+    logger.info("为什么不是重复任务：%s", task.why_not_duplicate)
+    logger.info("预计用户收益：%s", task.expected_user_benefit)
+    for reason in gate_decision.reasons:
+        logger.info("Gate 判定依据：%s", reason)
+
+    if not gate_decision.passed:
+        msg = (
+            f"[Value Gate] 任务未通过价值门（ValueScore={gate_decision.score}，"
+            f"重复类别={gate_decision.repetitive_category or '无'}，"
+            f"最近出现次数={gate_decision.repetitive_count}），已丢弃，不调用 Claude，"
+            f"不提交。判定依据：{'；'.join(gate_decision.reasons)}"
+        )
+        logger.warning(msg)
+        return finalize("LOW_VALUE_REJECTED", msg, EXIT_SUCCESS)
 
     if args.dry_run:
         logger.info("--dry-run 模式：仅展示任务，不调用 Claude Code，不修改代码，不提交。")
@@ -967,6 +1019,11 @@ def main(argv: list[str] | None = None) -> int:
             if final_status == "PLANNER_DONE":
                 print("Planner: DONE")
                 print("Auto Dev Finished")
+            elif final_status == "STOPPED_LOW_VALUE":
+                print("当前项目已经没有值得自动开发的高价值任务。")
+                print("建议进入 Project Audit 或 V2 规划。")
+            elif final_status == "LOW_VALUE_REJECTED":
+                print(f"Task #{task_number} 未通过 Value Gate，已丢弃，不调用 Claude、不提交。")
             else:
                 print(f"Auto Dev 已停止（Task #{task_number}，最终状态：{final_status}）。")
             return exit_code
