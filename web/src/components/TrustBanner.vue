@@ -4,7 +4,9 @@
  *
  * 文案统一在本组件内维护，禁止各页面自行修改措辞——如需调整，只能修改本文件。
  * 三种呈现形态：
- * - full：首页 Header 与 Hero 之间的完整版本，首屏固定显示，不可关闭/折叠/轮播。
+ * - full：首页 Header 与 Hero 之间的版本，首屏固定显示，不可关闭/折叠/轮播；
+ *   默认收起为单行/两行紧凑条，"谨防冒充诈骗"可展开查看完整防骗说明（展开状态
+ *   本身可收起，但整条 Banner 不可整体隐藏）。
  * - compact：其它核心页面顶部的精简版本。
  * - print：打印页面第一页顶部的强制显示版本（复用全局 .print-only 工具类，
  *   屏幕上不可见，仅在打印/另存为 PDF 时显示，且不可被隐藏或移到页面底部）。
@@ -12,27 +14,47 @@
  * 颜色复用既有 --color-notice-*（浅黄色系）与 --color-info-*（蓝灰色系）
  * Design Token，不引入红色，不新增颜色变量。
  */
+import { ref } from 'vue'
+
 withDefaults(
   defineProps<{
     variant?: 'full' | 'compact' | 'print'
   }>(),
   { variant: 'full' }
 )
+
+const detailsOpen = ref(false)
 </script>
 
 <template>
   <div v-if="variant === 'full'" class="trust-banner trust-banner--full" role="note" aria-label="公益与安全声明">
-    <p class="trust-banner__title">【纯公益 · 永久免费 · 注意防骗】</p>
-    <ul class="trust-banner__list">
-      <li>LawGuard 是纯公益法律信息平台，永久免费，不收取任何费用。</li>
-      <li>不会主动通过电话、短信、微信、QQ、邮件或任何社交软件联系用户，不会要求注册账号。</li>
-      <li>不会收集身份证、手机号、银行卡、验证码、案件材料等个人信息。</li>
-      <li>不会推荐律师，不会接受案件委托，不会要求任何形式的付款或转账。</li>
-    </ul>
-    <p class="trust-banner__caution">
-      任何冒充 LawGuard 主动联系、收费、推荐律师、承诺取保、撤案、无罪、减刑、要求转账或索要个人信息的行为，
-      都可能涉嫌诈骗，请务必提高警惕。
-    </p>
+    <div class="trust-banner__row">
+      <span class="trust-banner__badge">纯公益 · 永久免费</span>
+      <p class="trust-banner__row-text">
+        LawGuard 不主动联系用户，不收集个人信息，不推荐律师，也不会要求付款。
+      </p>
+      <button
+        type="button"
+        class="trust-banner__toggle"
+        :aria-expanded="detailsOpen"
+        aria-controls="trust-banner-details"
+        @click="detailsOpen = !detailsOpen"
+      >
+        谨防冒充诈骗 <span aria-hidden="true">{{ detailsOpen ? '▲' : '▾' }}</span>
+      </button>
+    </div>
+    <div v-show="detailsOpen" id="trust-banner-details" class="trust-banner__details">
+      <ul class="trust-banner__list">
+        <li>LawGuard 是纯公益法律信息平台，永久免费，不收取任何费用。</li>
+        <li>不会主动通过电话、短信、微信、QQ、邮件或任何社交软件联系用户，不会要求注册账号。</li>
+        <li>不会收集身份证、手机号、银行卡、验证码、案件材料等个人信息。</li>
+        <li>不会推荐律师，不会接受案件委托，不会要求任何形式的付款或转账。</li>
+      </ul>
+      <p class="trust-banner__caution">
+        任何冒充 LawGuard 主动联系、收费、推荐律师、承诺取保、撤案、无罪、减刑、要求转账或索要个人信息的行为，
+        都可能涉嫌诈骗，请务必提高警惕。
+      </p>
+    </div>
   </div>
 
   <div
@@ -91,7 +113,54 @@ withDefaults(
 }
 
 .trust-banner--full {
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-2) var(--space-5);
+}
+
+.trust-banner__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-height: 40px;
+}
+
+.trust-banner__badge {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+}
+
+.trust-banner__row-text {
+  margin: 0;
+  flex: 1 1 260px;
+  font-size: var(--font-size-caption);
+}
+
+.trust-banner__toggle {
+  flex-shrink: 0;
+  margin-left: auto;
+  background: none;
+  border: none;
+  padding: var(--space-1) 0;
+  font: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: 700;
+  color: var(--color-notice-text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.trust-banner__toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.trust-banner__details {
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-top: 1px solid var(--color-notice-border);
+  margin-top: var(--space-2);
 }
 
 .trust-banner--compact {

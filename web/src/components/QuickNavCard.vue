@@ -1,7 +1,9 @@
 <script setup lang="ts">
 /**
- * 首页快速导航区块：提供指向官方渠道、法律依据、诉讼阶段三大入口的快捷链接。
- * 响应式列数复用全局 .grid / .grid-2 / .grid-3（见 style.css，640px/960px 断点），
+ * 首页"你现在需要什么？"任务入口区块：4 个明确的用户场景任务卡（家人刚被带走/
+ * 已收到法律文书/想了解当前权利/需要寻找官方渠道），替代原先的通用"快速导航"，
+ * 与首页"核心功能"区块合并去重，避免同一批目的地在首页出现两套导航。
+ * 响应式列数复用全局 .grid / .grid-2 / .grid-4（见 style.css，640px/960px 断点），
  * 间距、圆角、聚焦态样式统一复用 style.css 中的设计令牌与 .card--interactive，
  * 不新增独立断点数值。图标为内联 SVG（不引入图标字体/第三方库），
  * 颜色跟随 currentColor，与卡片文字色保持一致。
@@ -9,6 +11,8 @@
 interface QuickNavItem {
   title: string
   description: string
+  /** 每张卡片只保留一个明确动作的行动文案，替代原先通用的"进入 →" */
+  actionLabel: string
   to: string
   /** 内联 SVG 图标的 path 数据，均为 24x24 视图下的线性图标 */
   iconPath: string
@@ -27,26 +31,36 @@ withDefaults(
 
 const items: QuickNavItem[] = [
   {
-    title: '官方渠道',
-    description: '公共法律服务热线、检察服务中心等官方救济渠道入口。',
-    to: '/official-channels',
-    iconPath: 'M12 3l7 3.2v5.3c0 4.8-3.1 7.9-7 9.5-3.9-1.6-7-4.7-7-9.5V6.2L12 3z',
-    ariaLabel: '前往官方渠道页面：公共法律服务热线、检察服务中心等官方救济渠道入口',
+    title: '家人刚被带走',
+    description: '快速了解最先需要确认的事情。',
+    actionLabel: '查看紧急指引',
+    to: '/emergency-guide',
+    iconPath: 'M12 3.5L2.5 19.5h19L12 3.5z M12 9.5v4 M12 16.3h.01',
+    ariaLabel: '前往被羁押后紧急行动指引：快速了解最先需要确认的事情',
   },
   {
-    title: '法律依据',
-    description: '内容对应的法律依据来源与版本记录，未复核内容明确标注。',
-    to: '/legal-sources',
-    iconPath:
-      'M4 5.8C4 4.8 4.8 4 5.8 4H11v16H5.8A1.8 1.8 0 0 1 4 18.2V5.8zM20 5.8c0-1-.8-1.8-1.8-1.8H13v16h5.2a1.8 1.8 0 0 0 1.8-1.8V5.8z',
-    ariaLabel: '前往法律依据页面：内容对应的法律依据来源与版本记录，未复核内容明确标注',
+    title: '已收到法律文书',
+    description: '核对文书名称、机关和关键时间。',
+    actionLabel: '开始文书核对',
+    to: '/documents',
+    iconPath: 'M6 3h8l5 5v13H6z M14 3v5h5',
+    ariaLabel: '前往文书核对页面：核对文书名称、机关和关键时间',
   },
   {
-    title: '诉讼阶段',
-    description: '按刑事诉讼阶段查看一般性法定权利常识指引。',
+    title: '想了解当前权利',
+    description: '按案件阶段查看一般性权利和程序。',
+    actionLabel: '查看权利指引',
     to: '/stages',
     iconPath: 'M4.5 19.5v-5M10.5 19.5v-9M16.5 19.5V5.5M4.5 14.5h6M10.5 10.5h6',
-    ariaLabel: '前往诉讼阶段页面：按刑事诉讼阶段查看一般性法定权利常识指引',
+    ariaLabel: '前往权利指引页面：按案件阶段查看一般性权利和程序',
+  },
+  {
+    title: '需要寻找官方渠道',
+    description: '查询法律援助、司法机关和官方公开入口。',
+    actionLabel: '查看官方渠道',
+    to: '/official-channels',
+    iconPath: 'M12 3l7 3.2v5.3c0 4.8-3.1 7.9-7 9.5-3.9-1.6-7-4.7-7-9.5V6.2L12 3z',
+    ariaLabel: '前往官方渠道页面：查询法律援助、司法机关和官方公开入口',
   },
 ]
 </script>
@@ -54,10 +68,10 @@ const items: QuickNavItem[] = [
 <template>
   <nav
     class="quick-nav"
-    :aria-label="headingId ? undefined : '首页快速导航'"
+    :aria-label="headingId ? undefined : '首页任务导航'"
     :aria-labelledby="headingId"
   >
-    <div class="grid grid-2 grid-3">
+    <div class="grid grid-2 grid-4">
       <RouterLink
         v-for="item in items"
         :key="item.to"
@@ -77,7 +91,7 @@ const items: QuickNavItem[] = [
         </svg>
         <h3 class="quick-nav__title">{{ item.title }}</h3>
         <p class="quick-nav__desc">{{ item.description }}</p>
-        <span class="quick-nav__link" aria-hidden="true">进入 →</span>
+        <span class="quick-nav__link" aria-hidden="true">{{ item.actionLabel }} →</span>
       </RouterLink>
     </div>
   </nav>

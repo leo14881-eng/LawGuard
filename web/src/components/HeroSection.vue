@@ -1,49 +1,41 @@
 <script setup lang="ts">
 /**
- * 首页 Hero 区域：标题需在 3 秒内说明网站用途，Trust Signals 建立信任在前，
- * 非法律意见声明保留但降低视觉权重（不使用色块，仅小号灰字），
- * 背景复用 --color-surface → --color-bg 的既有浅色渐变，不新增颜色。
+ * 首页 Hero 区域：左侧 60% 文案 + 右侧 40% 应急导航步骤卡（非交互，纯展示，
+ * 不使用装饰插画）。信任标签与非法律意见声明已移出 Hero，分别见 Trust Banner
+ * 与首页"为什么可以放心使用""使用边界"区块，避免与本区域重复。
+ * 背景复用既有 --color-surface → --color-bg 渐变，不新增颜色。
  */
-const trustSignals = [
-  '官方法律来源',
-  '免费公益平台',
-  '内容标注最后核验日期',
-  '不提供个案法律意见',
-]
+const navigationSteps = ['选择案件阶段', '查看当前权利', '获取行动清单', '核对官方渠道']
 </script>
 
 <template>
   <section class="hero">
     <div class="container hero__inner">
-      <h1>家人卷入刑事案件，先了解程序和合法权利</h1>
-      <p class="hero__subtitle">
-        为刑事案件当事人及其家属提供一般性权利说明、程序指引、文书核对方法和官方救济渠道。
-      </p>
+      <div class="hero__main">
+        <span class="hero__tag">刑事案件公益应急导航</span>
+        <h1 class="hero__title">关键时刻，先弄清楚下一步该怎么办</h1>
+        <p class="hero__subtitle">
+          为刑事案件当事人及家属提供基于官方法律依据的程序导航、权利指引、文书核对和救济渠道。
+        </p>
 
-      <div class="hero__actions">
-        <RouterLink to="/stages" class="btn btn-primary">按案件阶段查看指引</RouterLink>
-        <RouterLink to="/official-channels" class="btn btn-secondary">查找官方救济渠道</RouterLink>
+        <div class="hero__actions">
+          <RouterLink to="/emergency-guide" class="btn btn-primary">开始应急导航</RouterLink>
+          <RouterLink to="/stages" class="btn btn-secondary">按案件阶段查看</RouterLink>
+        </div>
+
+        <p class="hero__helper">无需注册 · 不收集信息 · 永久免费</p>
       </div>
 
-      <ul class="hero__trust" aria-label="平台信任标识">
-        <li v-for="item in trustSignals" :key="item" class="hero__trust-item">
-          <svg class="hero__trust-icon" viewBox="0 0 20 20" aria-hidden="true">
-            <path
-              d="M4 10.5l3.5 3.5 8-8"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-          {{ item }}
-        </li>
-      </ul>
-
-      <p class="hero__disclaimer">
-        本平台不是政府机关、律师事务所或法律援助机构，不提供具体案件法律意见。
-      </p>
+      <div class="hero__aside">
+        <div class="card hero__steps" aria-label="应急导航步骤">
+          <ol class="hero__steps-list">
+            <li v-for="(step, index) in navigationSteps" :key="step" class="hero__steps-item">
+              <span class="hero__steps-index" aria-hidden="true">{{ index + 1 }}</span>
+              {{ step }}
+            </li>
+          </ol>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -51,59 +43,110 @@ const trustSignals = [
 <style scoped>
 .hero {
   background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-bg) 100%);
-  padding: var(--space-10) 0 var(--space-6);
+  padding: var(--space-8) 0;
 }
 
 .hero__inner {
-  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.hero__main {
+  flex: 1 1 auto;
+}
+
+.hero__tag {
+  display: inline-block;
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-info-bg);
+  border: 1px solid var(--color-info-border);
+  border-radius: var(--radius-pill);
+  padding: 3px 12px;
+  margin-bottom: var(--space-3);
+}
+
+.hero__title {
+  margin: 0 0 var(--space-3);
+  max-width: 14em;
+  text-wrap: balance;
 }
 
 .hero__subtitle {
   font-size: 16px;
   color: var(--color-text-muted);
-  margin-bottom: var(--space-6);
-  max-width: 620px;
+  margin-bottom: var(--space-5);
+  max-width: 520px;
 }
 
 .hero__actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-3);
 }
 
-.hero__trust {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  list-style: none;
-  padding: 0;
-  margin: 0 0 var(--space-4);
-}
-
-.hero__trust-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: var(--radius-pill);
-  background: var(--color-success-bg);
-  border: 1px solid var(--color-success-border);
-  color: var(--color-success-text);
-  font-size: var(--font-size-label);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.hero__trust-icon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-
-.hero__disclaimer {
+.hero__helper {
   font-size: var(--font-size-caption);
   color: var(--color-text-muted);
   margin: 0;
+}
+
+.hero__steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.hero__steps-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.hero__steps-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.hero__steps-index {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (min-width: 960px) {
+  .hero {
+    padding: var(--space-8) 0;
+  }
+
+  .hero__inner {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-10);
+  }
+
+  .hero__main {
+    flex: 0 0 58%;
+  }
+
+  .hero__aside {
+    flex: 0 0 38%;
+  }
 }
 </style>

@@ -2,7 +2,6 @@
 import HeroSection from '../components/HeroSection.vue'
 import QuickNavCard from '../components/QuickNavCard.vue'
 import StageCard from '../components/StageCard.vue'
-import FeatureCard from '../components/FeatureCard.vue'
 import ChannelCard from '../components/ChannelCard.vue'
 import AppCard from '../components/AppCard.vue'
 import NoticeBanner from '../components/NoticeBanner.vue'
@@ -28,33 +27,27 @@ const familySteps = [
   },
 ]
 
-const whyChoose = [
-  { title: '官方法律来源', description: '内容对应官方公开法律文本，标注来源与核验状态。' },
-  { title: '持续更新', description: '跟踪法律法规变化，及时标记待复核内容。' },
-  { title: '免费公益', description: '完全免费使用，不收费、不收集用户材料。' },
-  { title: '权利指引', description: '按诉讼阶段梳理权利要点，通俗易懂。' },
-]
-
-const features = [
+/** "为什么可以放心使用"：小图标 + 标题 + 一句说明，替代原先大面积绿色胶囊标签。 */
+const trustPoints = [
   {
-    title: '权利知识',
-    description: '以通俗语言梳理刑事诉讼各阶段的一般性法定权利常识。',
-    to: '/stages',
+    title: '官方法律来源',
+    description: '内容对应官方公开法律文本，标注来源与核验状态。',
+    iconPath: 'M12 3l7 3.2v5.3c0 4.8-3.1 7.9-7 9.5-3.9-1.6-7-4.7-7-9.5V6.2L12 3z',
   },
   {
-    title: '文书核对',
-    description: '核对笔录与法律文书时可以留意的一般性方法与要点。',
-    to: '/documents',
+    title: '内容标注核验日期',
+    description: '每条内容记录最后核验日期，未核验内容明确标注。',
+    iconPath: 'M4 6h16M4 6v13a1 1 0 001 1h14a1 1 0 001-1V6M8 3v4M16 3v4',
   },
   {
-    title: '法律依据',
-    description: '内容对应的法律依据来源与版本记录，未复核内容明确标注。',
-    to: '/legal-sources',
+    title: '不收集个人信息',
+    description: '不要求注册，不收集身份证、手机号等个人信息。',
+    iconPath: 'M12 3l7 3.2v5.3c0 4.8-3.1 7.9-7 9.5-3.9-1.6-7-4.7-7-9.5V6.2L12 3z M9 12l2 2 4-4',
   },
   {
-    title: '官方救济',
-    description: '公共法律服务热线、检察服务中心等官方渠道信息。',
-    to: '/official-channels',
+    title: '不提供个案法律意见',
+    description: '仅提供一般性程序信息，具体案件请咨询执业律师。',
+    iconPath: 'M12 3.5L2.5 19.5h19L12 3.5z M12 9.5v4 M12 16.3h.01',
   },
 ]
 </script>
@@ -67,29 +60,36 @@ const features = [
 
     <HeroSection />
 
-    <section class="section emergency-cta-section">
-      <div class="container">
-        <div class="card emergency-cta">
-          <h2 class="emergency-cta__title">家人或恋人突然被羁押，我该怎么办？</h2>
-          <p class="emergency-cta__desc">
-            根据关系和案件状态生成下一步行动清单：当前身份通常能做什么、最应该联系谁、联系不到近亲属时还有哪些合法路径。
-          </p>
-          <RouterLink to="/emergency-guide" class="btn btn-primary emergency-cta__action">
-            开始生成行动指引
-          </RouterLink>
-        </div>
-      </div>
-    </section>
-
     <section class="section">
       <div class="container">
-        <h2 id="quick-nav-heading">快速导航</h2>
-        <p class="section__lead">常用入口一步直达，方便快速查看官方渠道、法律依据与诉讼阶段。</p>
+        <h2 id="quick-nav-heading">你现在需要什么？</h2>
         <QuickNavCard heading-id="quick-nav-heading" />
       </div>
     </section>
 
     <section class="section section-alt">
+      <div class="container">
+        <h2>为什么可以放心使用</h2>
+        <div class="grid grid-2 grid-4 trust-points">
+          <AppCard v-for="point in trustPoints" :key="point.title" class="trust-point">
+            <svg class="trust-point__icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                :d="point.iconPath"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <h3 class="trust-point__title">{{ point.title }}</h3>
+            <p class="trust-point__desc">{{ point.description }}</p>
+          </AppCard>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
       <div class="container">
         <h2>家属如何使用 LawGuard</h2>
         <div class="grid grid-3">
@@ -108,18 +108,6 @@ const features = [
       </div>
     </section>
 
-    <section class="section">
-      <div class="container">
-        <h2>为什么选择 LawGuard</h2>
-        <div class="grid grid-4">
-          <AppCard v-for="item in whyChoose" :key="item.title" class="why-choose__item">
-            <h3 class="why-choose__title">{{ item.title }}</h3>
-            <p class="why-choose__desc">{{ item.description }}</p>
-          </AppCard>
-        </div>
-      </div>
-    </section>
-
     <section class="section section-alt">
       <div class="container">
         <h2>按刑事诉讼阶段查看指引</h2>
@@ -133,21 +121,6 @@ const features = [
     </section>
 
     <section class="section">
-      <div class="container">
-        <h2>核心功能</h2>
-        <div class="grid grid-4">
-          <FeatureCard
-            v-for="feature in features"
-            :key="feature.title"
-            :title="feature.title"
-            :description="feature.description"
-            :to="feature.to"
-          />
-        </div>
-      </div>
-    </section>
-
-    <section class="section section-alt">
       <div class="container">
         <h2>官方救济渠道</h2>
         <p class="section__lead">
@@ -169,10 +142,15 @@ const features = [
       </div>
     </section>
 
-    <section class="section">
-      <div class="container">
-        <h2>内容边界说明</h2>
-        <LegalDisclaimer expanded />
+    <section class="section section-alt boundary-section">
+      <div class="container boundary">
+        <div class="boundary__intro">
+          <h2>使用边界</h2>
+          <p class="boundary__lead">帮助您正确理解本平台能提供什么、不能提供什么。</p>
+        </div>
+        <div class="boundary__content">
+          <LegalDisclaimer expanded />
+        </div>
       </div>
     </section>
   </div>
@@ -194,42 +172,26 @@ const features = [
   margin-top: 20px;
 }
 
-.why-choose__title {
+.trust-points {
+  margin-top: var(--space-2);
+}
+
+.trust-point__icon {
+  width: 26px;
+  height: 26px;
+  color: var(--color-primary);
+  margin-bottom: var(--space-2);
+}
+
+.trust-point__title {
   margin: 0 0 6px;
-  font-size: 17px;
+  font-size: 16px;
   color: var(--color-primary-dark);
 }
 
-.emergency-cta-section {
-  padding-top: var(--space-6);
-  padding-bottom: var(--space-6);
-}
-
-.emergency-cta {
-  border-left: 4px solid var(--color-primary);
-  background: var(--color-surface);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.emergency-cta__title {
+.trust-point__desc {
   margin: 0;
-}
-
-.emergency-cta__desc {
-  margin: 0;
-  color: var(--color-text-muted);
-  max-width: 640px;
-}
-
-.emergency-cta__action {
-  align-self: flex-start;
-}
-
-.why-choose__desc {
-  margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-text-muted);
 }
 
@@ -261,5 +223,46 @@ const features = [
 
 .family-step__notice {
   margin-top: var(--space-5);
+}
+
+.boundary-section {
+  padding-top: var(--space-8);
+  padding-bottom: var(--space-8);
+}
+
+.boundary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.boundary__intro h2 {
+  margin-bottom: var(--space-2);
+}
+
+.boundary__lead {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  max-width: 320px;
+}
+
+.boundary__content {
+  flex: 1 1 auto;
+}
+
+@media (min-width: 960px) {
+  .boundary {
+    flex-direction: row;
+    gap: var(--space-8);
+  }
+
+  .boundary__intro {
+    flex: 0 0 280px;
+  }
+
+  .boundary__content {
+    flex: 1 1 auto;
+  }
 }
 </style>
