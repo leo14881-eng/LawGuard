@@ -4,7 +4,7 @@
   "description": "面向刑事案件当事人及家属的纯公益应急导航平台，永久免费，不主动联系用户，不收集个人信息。",
   "start_url": "/",
   "display": "standalone",
-  "theme_color": "#14335c",
+  "theme_color": "#ffffff",
   "background_color": "#ffffff",
   "lang": "zh-CN",
   "icons": [
