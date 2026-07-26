@@ -22,3 +22,47 @@ AutoDev(task-003): feat: 首页新增 QuickNavCard 快速导航区块并嵌入 H
 
 ## Known Issues
 （无）
+
+## 功能状态表（人工维护，2026-07-26 盘点）
+
+> **重要说明**：以上 7 个字段（Project Stage ~ Known Issues）由
+> `automation/progress.py` 固定模板自动生成；下次通过
+> `python automation/orchestrator.py` 成功提交新任务时，该工具会用固定模板整体
+> 重写本文件，**本节及以下内容会被覆盖丢失**。这是当前 Auto Dev V1 Progress 机制
+> 与本次人工功能盘点需求之间的已知缺口——本次审计未修改 `automation/progress.py`
+> （属于 Auto Dev V1 架构，不在本次允许修改范围内）。建议：每次人工会话结束前，或
+> 未来决定扩展 `progress.py` 支持本表结构后再解决持久化问题。状态定义见
+> `CLAUDE.md`"开发前去重检查"一节：PLANNED / IN_PROGRESS / IMPLEMENTED / VERIFIED /
+> BLOCKED / REJECTED。
+
+| 功能 | 状态 | 实现位置 | 测试/验证 | 最后核验 | 备注 |
+|---|---|---|---|---|---|
+| 全站 Trust Banner（公益与安全声明） | VERIFIED | `web/src/components/TrustBanner.vue`，接入 HomeView（full）/StagesView/DocumentsView/OfficialChannelsView/AboutView/EmergencyGuideView（compact）/Stages/Documents/LegalSources/EmergencyGuideView（print） | 单测 4 项通过（`components/__tests__/TrustBanner.test.ts`）；Playwright 截图人工检查首屏可见、打印模拟正常 | 2026-07-26 | 首页只保留 full 版，未叠加 compact（避免重复堆砌） |
+| 首页首屏公益安全提示 | VERIFIED | `HomeView.vue`（Header 与 Hero 之间） | 同上，Playwright 截图确认首屏可见 | 2026-07-26 | — |
+| 核心页面 Compact 公益提示 | VERIFIED | Stages/Documents/OfficialChannels/About 四页 | 同上 | 2026-07-26 | 法律来源页仅接入 print 版，未接入 compact（不在原始页面清单内） |
+| 打印页面第一页顶部公益/防诈骗声明 | VERIFIED | `TrustBanner.vue` variant="print"，接入 Stages/Documents/LegalSources/EmergencyGuideView | Playwright `emulateMedia('print')` 截图确认位于第一页顶部、双线黑白边框、未被移到底部 | 2026-07-26 | — |
+| 关于项目页公益/隐私/防诈骗声明 | VERIFIED | `AboutView.vue`"公益与隐私声明"（17 项 ✓）、"谨防诈骗"（7 项） | Playwright 截图人工检查 | 2026-07-26 | — |
+| Footer 公益信息 | VERIFIED | `AppFooter.vue` footer__trust-line | Playwright 截图人工检查 | 2026-07-26 | — |
+| 被羁押后紧急行动指引（整体功能） | VERIFIED | `web/src/views/EmergencyGuideView.vue` | 28 个 Vitest 单测/组件测试通过；`npm run build` 通过；Playwright 截图人工检查桌面/移动端/打印 | 2026-07-26 | 首页入口见 HomeView "emergency-cta" 区块，路由 `/emergency-guide` |
+| 关系身份选择 / 羁押阶段选择 / 律师状态选择 | VERIFIED | `data/emergencyGuidance.ts` 选项数据 + `EmergencyGuideView.vue` 三步引导 | 同上 | 2026-07-26 | — |
+| 自动生成紧急行动清单 | VERIFIED | `buildTodayPriorities`/`getIdentityGuidance` 等纯函数（`emergencyGuidance.ts`） | `data/__tests__/emergencyGuidance.test.ts` 覆盖 8 个场景组合 | 2026-07-26 | 简单查表/条件分支拼接，非通用规则引擎 |
+| 未婚恋人/朋友/同事场景行动指引 | VERIFIED | `nonEligibleIdentityGuidance` | 同上 | 2026-07-26 | — |
+| 建议寻找适格联系人 | VERIFIED | `suggestedContactOrder` | 同上 | 2026-07-26 | 仅非近亲属/监护人关系时展示 |
+| 联系不到近亲属时的替代路径（本人委托/值班律师/法律援助） | VERIFIED | `fallbackPaths` | 同上，断言 3 条路径均存在且含 caveat | 2026-07-26 | 值班律师/法律援助具体来源类别尚待 P0.2 确认，见下方"法律来源"备注 |
+| 看守所羁押与监狱服刑差异化说明 | VERIFIED | `getMeetingGuidance` | 同上，覆盖看守所/监狱/取保/不清楚四种阶段 | 2026-07-26 | — |
+| 防诈骗行动提醒（紧急指引内） | VERIFIED | `fraudWarnings` | 同上 | 2026-07-26 | — |
+| 联系人本地存储（增删改查、清除、持久化） | VERIFIED | `composables/useEmergencyContacts.ts` | `composables/__tests__/useEmergencyContacts.test.ts` 5 项通过 | 2026-07-26 | 仅 localStorage，不上传服务器，key `lawguard.emergencyContacts.v1` |
+| 手机号默认脱敏 | VERIFIED | `utils/phoneMask.ts` | `utils/__tests__/phoneMask.test.ts` 3 项通过 | 2026-07-26 | 打印/展示默认脱敏，用户可勾选显示完整号码 |
+| 浏览器打印 / Print CSS | VERIFIED | `PrintPageButton.vue`/`PrintFooter.vue`/`style.css` `@media print` | Playwright `emulateMedia('print')` 截图人工检查（无自动化断言，jsdom 不便模拟打印渲染） | 2026-07-26 | 未引入服务端 PDF 生成 |
+| 中文 document.title / html lang="zh-CN" | VERIFIED | `index.html`、`PrintPageButton.vue` 的 `pageTitle` prop | Playwright 脚本验证打印前后 title 切换与恢复正确 | 2026-07-26 | — |
+| 法律来源核验（紧急指引相关 10 项规则） | IMPLEMENTED（内容为一般性表述，标注"待法律复核"） | `data/legal_sources.ts` 新增 `mps-official-rules`；复用既有 `npc-official-law` | 未经执业律师逐条核验 | 2026-07-26（待核验） | 值班律师/法律援助的具体来源类别（司法部相关规章）尚未在 P0.2 允许清单中确认，措辞已保守处理，未归为已核验 |
+| 分享 LawGuard（navigator.share/复制链接/二维码/分享图片/OG/SEO 全套） | PLANNED | — | — | — | 本次审计明确不开发；见新对话中的独立需求，尚未开始编码 |
+| 本地全文搜索（V1 功能范围第 7 项） | PLANNED | — | — | — | 仅 `AppEmptyState.vue` 注释提及"未来的本地全文搜索功能"，无实际实现 |
+
+### 重复实现检查结果（本次审计）
+
+未发现同一用途的重复组件/重复数据模型/重复分享实现/已弃用但仍在路由中的旧页面。
+`TrustBanner`（公益声明）、`NoticeBanner`（通用提示）、`LegalDisclaimer`（P-1 非法律
+意见声明）三者用途不同，未重复。当前所有路由均对应实际存在且启用的页面组件。
+SEO 相关信息（title/description/OpenGraph/canonical/robots/sitemap）目前只有基础
+`<title>`/`<meta description>`，其余项均为 `PLANNED`，尚未散落形成冲突（因为尚未存在）。
