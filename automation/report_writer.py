@@ -198,6 +198,24 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
         f"- 是否执行 git push：否"
     )
 
+    lock_text = "（本次运行未持有仓库运行锁）"
+    if report.lock_info:
+        li = report.lock_info
+        stale_text = (
+            f"是（归档至 {li.get('stale_lock_archived_path')}）"
+            if li.get("stale_lock_found")
+            else "否"
+        )
+        lock_text = (
+            f"- 仓库：{li.get('repo_root', 'Unknown')}\n"
+            f"- 锁文件：{li.get('lock_path', 'Unknown')}\n"
+            f"- Run ID：{li.get('run_id', 'Unknown')}\n"
+            f"- PID：{li.get('pid', 'Unknown')}\n"
+            f"- 获取时间：{li.get('acquired_at', 'Unknown')}\n"
+            f"- 释放结果：{'已释放' if li.get('released') else '未释放'}\n"
+            f"- 是否发现陈旧锁：{stale_text}"
+        )
+
     content = f"""# LawGuard 自动化开发运行报告
 
 ## 1. 运行 ID
@@ -249,6 +267,9 @@ def write_summary_markdown(reports_dir: Path, report: RunReport, changed_files: 
 
 ## 16. Attempt 总结
 {attempt_summary_text}
+
+## 17. 运行锁
+{lock_text}
 """
     reports_dir.mkdir(parents=True, exist_ok=True)
     path = reports_dir / f"{report.run_id}.md"

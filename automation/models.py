@@ -113,6 +113,13 @@ class RunReport:
     # proceeded_to_next_attempt。字段名沿用早期 Review Retry 阶段的
     # `review_attempts`，保持与已有报告读取逻辑兼容。
     review_attempts: list[dict[str, Any]] = dataclasses.field(default_factory=list)
+    # 仓库级运行锁信息（见 automation/run_lock.py），覆盖整个 Auto Dev Run（可能
+    # 包含多个 Task），因此同一次 Run 内各 Task 的报告会展示相同的锁信息。字段：
+    # repo_root、lock_path、run_id、pid、acquired_at、released（是否已释放）、
+    # stale_lock_found（是否发现过陈旧锁）、stale_lock_archived_path（陈旧锁归档
+    # 路径，未发生时为 None）。未持有锁（例如 --list-models 等只读子命令）时为
+    # None。
+    lock_info: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -128,6 +135,7 @@ class RunReport:
             "error_message": self.error_message,
             "token_usages": [u.to_dict() for u in self.token_usages],
             "review_attempts": self.review_attempts,
+            "lock_info": self.lock_info,
         }
 
     def to_safe_json(self) -> str:

@@ -32,8 +32,10 @@ task.risk_level 不是 LOW；Review 结论为 BLOCKED（要求人工决策）；
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime
 import secrets
+import signal
 import sys
 import time
 from pathlib import Path
@@ -47,6 +49,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from automation import claude_runner, context_loader, openai_client, progress, security, validator
+from automation import run_lock
 from automation.config import (
     PROGRESS_FILE,
     PROJECT_ROOT,
@@ -69,7 +72,9 @@ from automation.report_writer import (
     write_text_file,
 )
 
-# 退出码约定
+# 退出码约定（新增运行锁相关退出码时延续已有编号，不重用 3/4/5/6 —— 这几个
+# 已经分别代表 SECURITY_FAILURE/CLAUDE_FAILURE/VALIDATION_FAILURE/REVIEW_FAILED，
+# 与"仓库已被占用"是完全不同的语义，重用会让现有调用方/测试无法区分两类失败）
 EXIT_SUCCESS = 0
 EXIT_GENERAL_FAILURE = 1
 EXIT_CONFIG_ERROR = 2
@@ -77,6 +82,9 @@ EXIT_SECURITY_FAILURE = 3
 EXIT_CLAUDE_FAILURE = 4
 EXIT_VALIDATION_FAILURE = 5
 EXIT_REVIEW_FAILED = 6
+EXIT_LOCK_BUSY = 7  # 仓库已被另一个确认存活的 Auto Dev 运行占用
+EXIT_LOCK_UNDETERMINED = 8  # 锁文件损坏，或无法安全判断是否仍然存活
+EXIT_UNLOCK_STALE_FAILED = 9  # --unlock-stale 未能清理陈旧锁（锁并非陈旧/不存在等）
 
 # Auto Fix：单个任务内最多允许的 Attempt 总数（Attempt 1 为初次执行，之后每轮为一次
 # Validation Fix 或 Review Fix，两者共享同一计数，不会出现 3+3=6 次），仅 risk_level
@@ -140,6 +148,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="列出当前 OPENAI_API_KEY 可访问的模型后退出；不生成任务、不调用 Claude、不提交。",
     )
     parser.add_argument(
+        "--lock-status", action="store_true",
+        help="查询仓库级 Auto Dev 运行锁当前状态（FREE/ACTIVE/STALE/CORRUPTED）后退出，不修改锁。",
+    )
+    parser.add_argument(
+        "--unlock-stale", action="store_true",
+        help="仅清理已确认陈旧的运行锁（进程已不存在/PID 被复用）后退出；活跃锁、"
+             "损坏锁、无法确认的锁一律不做任何修改。不提供强制清理活跃锁的能力。",
+    )
+    parser.add_argument(
         "--verbose", action="store_true",
         help="输出更详细的日志（仍不会显示任何密钥）。",
     )
@@ -201,6 +218,105 @@ def handle_list_models(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
+def _format_lock_info_lines(info: "run_lock.LockInfo") -> list[str]:
+    return [
+        f"  PID：{info.pid}",
+        f"  Run ID：{info.run_id}",
+        f"  Task ID：{info.task_id or '（尚未开始任务）'}",
+        f"  启动时间：{info.autodev_start_time}",
+        f"  主机：{info.hostname}",
+        f"  仓库：{info.repo_root}",
+        f"  启动命令：{info.command or 'Unknown'}",
+    ]
+
+
+def handle_lock_status(args: argparse.Namespace) -> int:
+    """处理 --lock-status：只读查询仓库级运行锁状态，不修改锁文件，不进入 Auto Loop。"""
+    try:
+        repo_root = run_lock.resolve_repo_root(PROJECT_ROOT)
+    except run_lock.RepoNotFoundError as exc:
+        print(f"无法定位仓库根目录：{exc}")
+        return EXIT_SECURITY_FAILURE
+
+    lock = run_lock.RepositoryRunLock(repo_root)
+    inspection = lock.inspect()
+    print(f"仓库：{repo_root}")
+    print(f"锁文件：{lock.lock_path}")
+
+    if inspection.status == "free":
+        print("状态：FREE（当前没有 Auto Dev 在运行，可以安全启动）")
+        return EXIT_SUCCESS
+
+    if inspection.status == "active":
+        print("状态：ACTIVE（已有 Auto Dev 正在运行，不能再启动第二个实例）")
+        for line in _format_lock_info_lines(inspection.lock_info):  # type: ignore[arg-type]
+            print(line)
+        print("  进程是否匹配：是（PID 存在且创建时间与锁记录一致）")
+        return EXIT_LOCK_BUSY
+
+    if inspection.status == "stale":
+        print(f"状态：STALE（{inspection.detail}）")
+        for line in _format_lock_info_lines(inspection.lock_info):  # type: ignore[arg-type]
+            print(line)
+        print("  是否允许安全清理：是，可执行 `python -m automation.orchestrator --unlock-stale`")
+        return EXIT_SUCCESS
+
+    if inspection.status == "corrupted":
+        print(f"状态：CORRUPTED（{inspection.detail}）")
+        print("  不会自动清理，请人工检查锁文件内容后再决定是否手动处理。")
+        return EXIT_LOCK_UNDETERMINED
+
+    print(f"状态：UNKNOWN（{inspection.detail}）")
+    print("  无法确认是否仍有 Auto Dev 在运行，不会自动清理或抢占，请人工检查。")
+    return EXIT_LOCK_UNDETERMINED
+
+
+def handle_unlock_stale(args: argparse.Namespace) -> int:
+    """处理 --unlock-stale：只清理已确认陈旧的锁，活跃锁/损坏锁/无法确认的锁一律不动。"""
+    try:
+        repo_root = run_lock.resolve_repo_root(PROJECT_ROOT)
+    except run_lock.RepoNotFoundError as exc:
+        print(f"无法定位仓库根目录：{exc}")
+        return EXIT_SECURITY_FAILURE
+
+    inspection, archived_path = run_lock.unlock_stale(repo_root)
+
+    if inspection.status == "free":
+        print("当前没有锁文件，无需清理。")
+        return EXIT_SUCCESS
+    if inspection.status == "active":
+        print("锁当前为 ACTIVE（确认有 Auto Dev 正在运行），拒绝清理。")
+        for line in _format_lock_info_lines(inspection.lock_info):  # type: ignore[arg-type]
+            print(line)
+        return EXIT_UNLOCK_STALE_FAILED
+    if inspection.status == "corrupted":
+        print(f"锁文件损坏（{inspection.detail}），未做任何修改，请人工检查后处理。")
+        return EXIT_UNLOCK_STALE_FAILED
+    if inspection.status == "unknown":
+        print(f"无法确认锁是否仍然存活（{inspection.detail}），未做任何修改。")
+        return EXIT_UNLOCK_STALE_FAILED
+
+    # status == "stale"：已在 run_lock.unlock_stale() 内完成归档
+    print(f"已确认为陈旧锁（{inspection.detail}），已归档至：{archived_path}")
+    return EXIT_SUCCESS
+
+
+def _install_signal_handlers() -> None:
+    """注册 SIGTERM 处理：转换为标准 KeyboardInterrupt，复用 main() 底部已有的
+    `except KeyboardInterrupt` 分支走统一的清理/释放锁路径。SIGINT 不做任何改动，
+    保留 Python 默认行为（本身就会抛出 KeyboardInterrupt）。不在信号处理函数内
+    执行任何文件操作，只负责记录停止原因、让主流程退出，实际释放锁交给
+    `RepositoryRunLock` 的上下文管理器 `__exit__`/`finally` 完成。
+    """
+    def _on_sigterm(signum, frame):  # noqa: ANN001 - 信号处理函数签名由标准库约定
+        raise KeyboardInterrupt(f"收到终止信号 SIGTERM（{signum}），正在停止")
+
+    with contextlib.suppress(Exception):
+        # 部分平台（如 Windows）注册 SIGTERM 处理函数即使成功，signal 也不一定能
+        # 真正投递；用 suppress 避免因平台差异导致启动直接失败。
+        signal.signal(signal.SIGTERM, _on_sigterm)
+
+
 def should_auto_commit(
     *, safe_to_commit: bool, auto_commit_enabled: bool, no_commit_flag: bool, allow_dirty_flag: bool
 ) -> bool:
@@ -228,13 +344,21 @@ def build_autodev_commit_message(task_number: int, base_message: str) -> str:
     return prefix + first_line
 
 
-def run_task_cycle(args: argparse.Namespace, task_number: int) -> tuple[int, str]:
+def run_task_cycle(
+    args: argparse.Namespace, task_number: int, lock_report_info: dict | None = None
+) -> tuple[int, str]:
     """执行一次完整的单任务流水线：Planner → Claude → Build/Test → Review → Commit。
 
     返回 (退出码, 最终状态字符串)。main() 中的 Auto Loop 依据 final_status 判断是否
     立即开始下一个任务：只有状态为 "COMMITTED" 时才会继续循环，其余任何终止状态
     （规划器无更多任务、Claude 失败、验证失败、评审 FAIL/BLOCKED、配置或安全检查
     失败等）都会结束 Auto Loop。
+
+    lock_report_info：本次 Run 持有的仓库运行锁信息（见 automation/run_lock.py），
+    覆盖整个 Run（可能包含多个 Task），因此同一次 Run 内各 Task 的报告会展示相同
+    的锁信息；写报告时锁必然仍处于持有中（Run 结束时才统一释放），"released"
+    字段固定为 False，如实反映报告生成那一刻的状态。未持有锁（例如测试直接调用
+    本函数）时为 None。
     """
     run_id = _generate_run_id()
     run_dir = RUNTIME_DIR / run_id
@@ -253,6 +377,7 @@ def run_task_cycle(args: argparse.Namespace, task_number: int) -> tuple[int, str
         git_commit=None,
         final_status="RUNNING",
         error_message=None,
+        lock_info=dict(lock_report_info, released=False) if lock_report_info else None,
     )
 
     def finalize(status: str, error_message: str | None, exit_code: int) -> tuple[int, str]:
@@ -740,43 +865,114 @@ def main(argv: list[str] | None = None) -> int:
     构建/测试失败、Review FAIL/BLOCKED、配置或安全检查失败等）都会结束循环并返回
     对应退出码。`--dry-run`/`--no-commit`/`--allow-dirty` 由于本身不会产出
     "COMMITTED" 状态，效果等同于只执行一个任务后停止，用于单任务预览与调试。
+
+    启动顺序（严格按此顺序执行，任何一步失败都不进入下一步）：
+    1. 解析参数；2. `--list-models` 是纯只读账户查询，不涉及仓库工作区，豁免于锁；
+    `--lock-status`/`--unlock-stale` 同样是只读查询/仅清理陈旧锁，不获取主锁；
+    3. 定位仓库根目录（`git rev-parse --show-toplevel`）；4. 获取仓库级运行锁——
+    获取成功前不得调用 Planner/Claude/Build/Review/Commit，不得修改
+    `AUTODEV_PROGRESS.md`；5. 锁获取成功后才读取/修复进度台账、才进入 Auto Loop。
     """
     args = parse_args(argv)
 
     if args.list_models:
         return handle_list_models(args)
+    if args.lock_status:
+        return handle_lock_status(args)
+    if args.unlock_stale:
+        return handle_unlock_stale(args)
 
-    # 启动恢复：优先读取 Auto Dev 进度台账；不存在时自动创建，格式异常时自动修复，
-    # 任何情况下都不会因此停止运行。
-    progress_state, progress_was_missing, progress_was_repaired = progress.load_or_repair(PROGRESS_FILE)
-    if progress_was_missing:
-        print(f"未找到 Auto Dev 进度文件，已自动创建：{PROGRESS_FILE}")
-    elif progress_was_repaired:
-        print(f"Auto Dev 进度文件格式异常，已自动修复为默认模板：{PROGRESS_FILE}")
-    else:
+    try:
+        repo_root = run_lock.resolve_repo_root(PROJECT_ROOT)
+    except run_lock.RepoNotFoundError as exc:
+        print(f"[AutoDev Lock]\n无法定位仓库根目录：{exc}")
+        return EXIT_SECURITY_FAILURE
+
+    _install_signal_handlers()
+
+    command_summary = "python -m automation.orchestrator " + " ".join(argv if argv is not None else sys.argv[1:])
+    lock = run_lock.RepositoryRunLock(repo_root, command=command_summary)
+    try:
+        acquired_info = lock.acquire()
+    except run_lock.LockBusyError as exc:
+        li = exc.lock_info
+        print("[AutoDev Lock]")
+        print(f"Repo: {repo_root}")
+        print(f"Lock file: {lock.lock_path}")
+        print("Result: BUSY")
+        print(f"Owner PID: {li.pid}")
+        print(f"Owner Run ID: {li.run_id}")
+        print(f"Owner Task: {li.task_id or '（尚未开始任务）'}")
+        print(f"Started at: {li.autodev_start_time}")
+        print(f"Host: {li.hostname}")
         print(
-            f"已恢复 Auto Dev 进度：已完成 {len(progress_state.completed_tasks)} 个任务，"
-            f"Last Commit={progress_state.last_commit}"
+            "建议操作：等待该运行结束后再启动；如确认它已经不是活跃进程，"
+            "可先执行 `python -m automation.orchestrator --lock-status` 核实，"
+            "确认为 STALE 后再用 `--unlock-stale` 清理，不要手动删除锁文件。"
         )
+        return EXIT_LOCK_BUSY
+    except run_lock.LockUndeterminedError as exc:
+        print("[AutoDev Lock]")
+        print(f"Repo: {repo_root}")
+        print(f"Lock file: {lock.lock_path}")
+        print("Result: UNDETERMINED")
+        print(f"原因：{exc}")
+        return EXIT_LOCK_UNDETERMINED
 
-    # 任务序号从已完成任务数量之后接续编号，避免每次重启进程都从 task-001 重新
-    # 计数，与其它历史提交的 AutoDev(task-NNN) 编号冲突。
-    task_number = len(progress_state.completed_tasks)
-    while True:
-        task_number += 1
-        print(f"\n===== Task #{task_number} =====")
-        exit_code, final_status = run_task_cycle(args, task_number)
+    print("[AutoDev Lock]")
+    print(f"Repo: {repo_root}")
+    print(f"Lock file: {lock.lock_path}")
+    print(f"Run ID: {acquired_info.run_id}")
+    print(f"PID: {acquired_info.pid}")
+    print("Result: ACQUIRED")
+    if lock.archived_stale_path:
+        print(f"（发现并归档了一把陈旧锁：{lock.archived_stale_path}）")
 
-        if final_status == "COMMITTED":
-            print(f"Task #{task_number} Auto Commit 完成，Starting Task #{task_number + 1}...")
-            continue
+    lock_report_info = {
+        "repo_root": str(repo_root),
+        "lock_path": str(lock.lock_path),
+        "run_id": acquired_info.run_id,
+        "pid": acquired_info.pid,
+        "acquired_at": acquired_info.autodev_start_time,
+        "stale_lock_found": lock.archived_stale_path is not None,
+        "stale_lock_archived_path": str(lock.archived_stale_path) if lock.archived_stale_path else None,
+    }
 
-        if final_status == "PLANNER_DONE":
-            print("Planner: DONE")
-            print("Auto Dev Finished")
+    try:
+        # 锁获取成功后才允许读取/修复进度台账、进入 Auto Loop。
+        progress_state, progress_was_missing, progress_was_repaired = progress.load_or_repair(PROGRESS_FILE)
+        if progress_was_missing:
+            print(f"未找到 Auto Dev 进度文件，已自动创建：{PROGRESS_FILE}")
+        elif progress_was_repaired:
+            print(f"Auto Dev 进度文件格式异常，已自动修复为默认模板：{PROGRESS_FILE}")
         else:
-            print(f"Auto Dev 已停止（Task #{task_number}，最终状态：{final_status}）。")
-        return exit_code
+            print(
+                f"已恢复 Auto Dev 进度：已完成 {len(progress_state.completed_tasks)} 个任务，"
+                f"Last Commit={progress_state.last_commit}"
+            )
+
+        # 任务序号从已完成任务数量之后接续编号，避免每次重启进程都从 task-001
+        # 重新计数，与其它历史提交的 AutoDev(task-NNN) 编号冲突。
+        task_number = len(progress_state.completed_tasks)
+        while True:
+            task_number += 1
+            lock.update_task(f"task-{task_number:03d}")
+            print(f"\n===== Task #{task_number} =====")
+            exit_code, final_status = run_task_cycle(args, task_number, lock_report_info)
+
+            if final_status == "COMMITTED":
+                print(f"Task #{task_number} Auto Commit 完成，Starting Task #{task_number + 1}...")
+                continue
+
+            if final_status == "PLANNER_DONE":
+                print("Planner: DONE")
+                print("Auto Dev Finished")
+            else:
+                print(f"Auto Dev 已停止（Task #{task_number}，最终状态：{final_status}）。")
+            return exit_code
+    finally:
+        released = lock.release()
+        print(f"[AutoDev Lock] Release: {'已释放' if released else '未执行删除（锁已不属于本次运行）'}")
 
 
 if __name__ == "__main__":

@@ -283,3 +283,36 @@ python automation\orchestrator.py --no-commit
 python automation\orchestrator.py --no-commit --verbose
 python automation\orchestrator.py --model <你账户可用的模型名> --dry-run
 ```
+
+## 15. 仓库级单实例运行锁
+
+同一个 Git 仓库同一时间只允许一个 Auto Dev 主流程运行（见
+`automation/run_lock.py`）。启动时先解析 `git rev-parse --show-toplevel` 得到仓库
+根目录，再原子获取锁；获取成功前不会调用 Planner、Claude、Build、Review，也不会
+修改 `docs/project/AUTODEV_PROGRESS.md`。
+
+- 锁文件位置：`<仓库根目录>/.autodev/autodev.lock`（不进入 Git，见 `.gitignore`）。
+- 判定"另一个运行是否还活着"依赖 `psutil`（同时核对 PID 是否存在与进程创建时间是否
+  匹配，避免 PID 被系统复用后误判），已加入 `requirements-automation.txt`。
+- 默认**不会**自动抢占仍在运行的实例；只有确认锁"陈旧"（对应进程已不存在）时才会
+  归档旧锁（`autodev.lock.stale.<timestamp>`，保留排查证据，不静默删除）后自动获取。
+- 不提供强制抢锁/强制终止其它进程的能力。
+
+查询/清理命令：
+
+```cmd
+python automation\orchestrator.py --lock-status
+python automation\orchestrator.py --unlock-stale
+```
+
+`--lock-status` 只读查询当前状态（FREE/ACTIVE/STALE/CORRUPTED），不修改锁文件；
+`--unlock-stale` 只清理已确认陈旧的锁，活跃锁、损坏锁、无法确认存活状态的锁一律
+拒绝清理并原样保留，交由人工核实。
+
+单实例锁不能替代、也不会删除既有的 dirty-file 保护（运行前检查 `git status` 是否
+干净）——前者防止两个 Auto Dev 进程并发写入同一工作区，后者防止覆盖用户或其他非
+Auto Dev 进程已有的未提交改动，两者需要同时生效。
+
+**边界**：本锁只能保证"遵守该锁规则的 Auto Dev 实例"不会并发，无法阻止用户手动
+编辑文件、IDE 自动格式化、另一个不经过 `automation/orchestrator.py` 入口的脚本，
+或人工直接执行的 Git 命令。

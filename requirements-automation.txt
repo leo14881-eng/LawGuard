@@ -1,2 +1,10 @@
-openai
+﻿openai
 python-dotenv
+# 仓库级运行锁（automation/run_lock.py）需要跨平台（Windows/Linux）判断"锁文件
+# 记录的 PID 是否仍是同一个存活进程"，必须同时核对进程是否存在与进程创建时间。
+# 标准库没有可靠的跨平台方式获取进程创建时间（Linux 需解析 /proc/<pid>/stat，
+# Windows 需要 ctypes 调用 GetProcessTimes），自行实现容易出错且难以测试；
+# psutil 是这个领域的事实标准、体积小、维护良好，因此新增为依赖，而不是拼一堆
+# 不可靠的最小实现。psutil 不可用时 run_lock.py 会保守地返回"无法确认"，不会
+# 自动清理或抢占锁。
+psutil>=5.9,<7

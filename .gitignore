@@ -21,6 +21,9 @@ __pycache__/
 automation/runtime/
 automation/reports/
 
+# Auto Dev 仓库级运行锁（automation/run_lock.py），运行时生成，不纳入版本管理
+.autodev/
+
 # Node
 node_modules/
 dist/
